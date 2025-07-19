@@ -1,0 +1,18 @@
+[requires]
+zlib/1.2.11
+openssl/3.5.0
+boost/1.87.0
+fmt/11.2.0
+
+
+[generators]
+CMakeDeps
+CMakeToolchain
+
+[options]
+boost:shared=True
+openssl:shared=True
+
+[imports]
+bin, *.dll -> ./bin
+lib, *.dylib* -> ./lib

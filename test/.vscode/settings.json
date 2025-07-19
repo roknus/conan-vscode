@@ -1,0 +1,7 @@
+{
+    "conan.activeRemote": "lost-temple",
+    "conan.activeHostProfile": "msvc_debug",
+    "conan.activeBuildProfile": "msvc_debug",
+    "python-envs.defaultEnvManager": "ms-python.python:system",
+    "python-envs.pythonProjects": []
+}

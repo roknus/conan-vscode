@@ -1,0 +1,304 @@
+{
+  "name": "conan-package-manager",
+  "displayName": "Conan Package Manager",
+  "description": "VS Code extension for Conan C++ package manager with commands to install packages and UI panels to manage packages, profiles, and remotes",
+  "version": "0.0.1",
+  "publisher": "roknus",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/roknus/conan-vscode.git"
+  },
+  "bugs": {
+    "url": "https://github.com/roknus/conan-vscode/issues"
+  },
+  "homepage": "https://github.com/roknus/conan-vscode#readme",
+  "engines": {
+    "vscode": "^1.101.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "extensionDependencies": [
+    "ms-python.python"
+  ],
+  "activationEvents": [
+    "workspaceContains:**/conanfile.txt",
+    "workspaceContains:**/conanfile.py"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "conan.installPackages",
+        "title": "Install Packages",
+        "category": "Conan",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "conan.installPackage",
+        "title": "Install Package",
+        "category": "Conan",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "conan.createProfile",
+        "title": "Create Profile",
+        "category": "Conan",
+        "icon": "$(add)"
+      },
+      {
+        "command": "conan.addRemote",
+        "title": "Add Remote",
+        "category": "Conan",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "conan.refreshPackages",
+        "title": "Refresh Packages",
+        "category": "Conan",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "conan.refreshProfiles",
+        "title": "Refresh Profiles",
+        "category": "Conan",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "conan.refreshRemotes",
+        "title": "Refresh Remotes",
+        "category": "Conan",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "conan.uploadMissingPackages",
+        "title": "Upload Missing Packages",
+        "category": "Conan",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "conan.uploadLocalPackage",
+        "title": "Upload to Remote",
+        "category": "Conan",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "conan.startServer",
+        "title": "Start Conan API Server",
+        "category": "Conan",
+        "icon": "$(server-process)"
+      },
+      {
+        "command": "conan.stopServer",
+        "title": "Stop Conan API Server",
+        "category": "Conan",
+        "icon": "$(stop-circle)"
+      },
+      {
+        "command": "conan.checkDependencies",
+        "title": "Check Python Dependencies",
+        "category": "Conan",
+        "icon": "$(checklist)"
+      },
+      {
+        "command": "conan.selectHostProfile",
+        "title": "Select Active Host Profile",
+        "category": "Conan",
+        "icon": "$(person)"
+      },
+      {
+        "command": "conan.selectBuildProfile",
+        "title": "Select Active Build Profile", 
+        "category": "Conan",
+        "icon": "$(tools)"
+      },
+      {
+        "command": "conan.selectRemote",
+        "title": "Select Active Remote",
+        "category": "Conan",
+        "icon": "$(globe)"
+      }
+    ],
+    "views": {
+      "conan-explorer": [
+        {
+          "id": "conan.packages",
+          "name": "Packages",
+          "when": "workspaceHasConanfile"
+        },
+        {
+          "id": "conan.profiles",
+          "name": "Profiles",
+          "when": "workspaceHasConanfile"
+        },
+        {
+          "id": "conan.remotes",
+          "name": "Remotes",
+          "when": "workspaceHasConanfile"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "conan-explorer",
+          "title": "Conan",
+          "icon": "$(package)"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "conan.refreshPackages",
+          "when": "view == conan.packages",
+          "group": "navigation"
+        },
+        {
+          "command": "conan.installPackages",
+          "when": "view == conan.packages",
+          "group": "navigation"
+        },
+        {
+          "command": "conan.refreshProfiles",
+          "when": "view == conan.profiles",
+          "group": "navigation"
+        },
+        {
+          "command": "conan.createProfile",
+          "when": "view == conan.profiles",
+          "group": "navigation"
+        },
+        {
+          "command": "conan.refreshRemotes",
+          "when": "view == conan.remotes",
+          "group": "navigation"
+        },
+        {
+          "command": "conan.addRemote",
+          "when": "view == conan.remotes",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "conan.installPackage",
+          "when": "view == conan.packages && (viewItem == package-downloadable || viewItem == package-buildable)",
+          "group": "inline"
+        },
+        {
+          "command": "conan.uploadLocalPackage",
+          "when": "view == conan.packages && viewItem == package-uploadable",
+          "group": "inline"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "conan.installPackages",
+          "when": "workspaceHasConanfile"
+        },
+        {
+          "command": "conan.installPackage",
+          "when": "false"
+        },
+        {
+          "command": "conan.createProfile",
+          "when": "workspaceHasConanfile"
+        },
+        {
+          "command": "conan.addRemote",
+          "when": "workspaceHasConanfile"
+        },
+        {
+          "command": "conan.uploadMissingPackages",
+          "when": "workspaceHasConanfile"
+        },
+        {
+          "command": "conan.uploadLocalPackage",
+          "when": "false"
+        },
+        {
+          "command": "conan.startServer",
+          "when": "workspaceHasConanfile"
+        },
+        {
+          "command": "conan.stopServer",
+          "when": "workspaceHasConanfile"
+        },
+        {
+          "command": "conan.checkDependencies",
+          "when": "workspaceHasConanfile"
+        },
+        {
+          "command": "conan.selectHostProfile",
+          "when": "workspaceHasConanfile"
+        },
+        {
+          "command": "conan.selectBuildProfile",
+          "when": "workspaceHasConanfile"
+        },
+        {
+          "command": "conan.selectRemote",
+          "when": "workspaceHasConanfile"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "conan.openWebview",
+        "key": "ctrl+shift+c ctrl+shift+m",
+        "when": "workspaceHasConanfile"
+      }
+    ],
+    "configuration": {
+      "title": "Conan Package Manager",
+      "properties": {
+        "conan.activeHostProfile": {
+          "type": "string",
+          "default": "default",
+          "description": "Active Conan host profile for package operations",
+          "scope": "resource"
+        },
+        "conan.activeBuildProfile": {
+          "type": "string",
+          "default": "default",
+          "description": "Active Conan build profile for package operations",
+          "scope": "resource"
+        },
+        "conan.activeRemote": {
+          "type": "string",
+          "default": "all",
+          "description": "Active Conan remote for package operations",
+          "scope": "resource"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "npm run check-types && npm run lint && node esbuild.js",
+    "watch": "npm-run-all -p watch:*",
+    "watch:esbuild": "node esbuild.js --watch",
+    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+    "package": "npm run check-types && npm run lint && node esbuild.js --production",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.101.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "20.x",
+    "@typescript-eslint/eslint-plugin": "^8.31.1",
+    "@typescript-eslint/parser": "^8.31.1",
+    "eslint": "^9.25.1",
+    "esbuild": "^0.25.3",
+    "npm-run-all": "^4.1.5",
+    "typescript": "^5.8.3",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.5.2"
+  }
+}
