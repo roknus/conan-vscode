@@ -28,14 +28,13 @@ try:
     from conan.internal.graph.profile_node_definer import initialize_conanfile_profile
     from conan.internal.graph.graph import CONTEXT_BUILD
     from conan.internal.graph.graph import BINARY_BUILD, BINARY_CACHE, BINARY_DOWNLOAD, BINARY_INVALID
-    from conan.internal.graph.graph import BINARY_MISSING, BINARY_SKIP, BINARY_EDITABLE, BINARY_EDITABLE_BUILD
-    from conan.internal.graph.graph import BINARY_UPDATE, BINARY_PLATFORM
     from conan.internal.graph.graph import RECIPE_DOWNLOADED, RECIPE_INCACHE, RECIPE_UPDATED
-    from conan.internal.graph.graph import RECIPE_INCACHE_DATE_UPDATED, RECIPE_NEWER, RECIPE_NOT_IN_REMOTE
-    from conan.internal.graph.graph import RECIPE_UPDATEABLE, RECIPE_NO_REMOTE, RECIPE_EDITABLE
 except ImportError:
     print("ERROR: Conan Python API not found. Make sure Conan 2.x is installed.")
     sys.exit(1)
+
+# Import local utilities
+from conan_utils import is_authenticated
 
 app = FastAPI(title="Conan VS Code Extension API", version="1.0.0")
 
@@ -117,6 +116,10 @@ server_state = {
     "workspace": None,
     "api_initialized": False
 }
+
+
+
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -652,7 +655,13 @@ async def check_package_availability(package_ref: str, host_profile: str, build_
                     recipe_status="error",
                     binary_status="error"
                 )
-        
+            
+        # Remove the remotes that are not authenticated
+        for remote in remotes[:]:  # Copy the list to avoid modification during iteration
+            if not is_authenticated(conan_api, remote):
+                print(f"Not authenticated to remote {remote.name}")
+                remotes.remove(remote)
+
         # Create a dependency graph for this specific package requirement
         deps_graph = conan_api.graph.load_graph_requires(
             requires=[package_ref],
