@@ -43,6 +43,10 @@ const copyFilesPlugin = {
 				fs.copyFileSync('conan_server.py', 'dist/conan_server.py');
 				console.log('Copied conan_server.py to dist/');
 				
+				// Copy utility modules
+				fs.copyFileSync('conan_utils.py', 'dist/conan_utils.py');
+				console.log('Copied conan_utils.py to dist/');
+				
 				// Copy requirements file
 				if (fs.existsSync('requirements.txt')) {
 					fs.copyFileSync('requirements.txt', 'dist/requirements.txt');
