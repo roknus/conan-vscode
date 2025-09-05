@@ -25,6 +25,11 @@
     "workspaceContains:**/conanfile.txt",
     "workspaceContains:**/conanfile.py"
   ],
+  "files": [
+    "dist/**",
+    "README.md",
+    "LICENSE"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
@@ -95,12 +100,6 @@
         "icon": "$(stop-circle)"
       },
       {
-        "command": "conan.checkDependencies",
-        "title": "Check Python Dependencies",
-        "category": "Conan",
-        "icon": "$(checklist)"
-      },
-      {
         "command": "conan.selectHostProfile",
         "title": "Select Active Host Profile",
         "category": "Conan",
@@ -108,7 +107,7 @@
       },
       {
         "command": "conan.selectBuildProfile",
-        "title": "Select Active Build Profile", 
+        "title": "Select Active Build Profile",
         "category": "Conan",
         "icon": "$(tools)"
       },
@@ -223,10 +222,6 @@
         },
         {
           "command": "conan.stopServer",
-          "when": "workspaceHasConanfile"
-        },
-        {
-          "command": "conan.checkDependencies",
           "when": "workspaceHasConanfile"
         },
         {
