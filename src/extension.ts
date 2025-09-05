@@ -821,9 +821,6 @@ export function activate(context: vscode.ExtensionContext) {
             vscode.window.registerTreeDataProvider('conan.profiles', profileProvider);
             vscode.window.registerTreeDataProvider('conan.remotes', remoteProvider);
 
-            // Check Python dependencies on startup
-            checkPythonDependencies(workspaceRoot);
-
             // Register commands
             context.subscriptions.push(
                 vscode.commands.registerCommand('conan.installPackages', async () => {
@@ -1116,10 +1113,6 @@ export function activate(context: vscode.ExtensionContext) {
                     remoteProvider.refresh();
                 }),
 
-                vscode.commands.registerCommand('conan.checkDependencies', async () => {
-                    await checkPythonDependencies(workspaceRoot);
-                }),
-
                 vscode.commands.registerCommand('conan.refreshPackages', () => packageProvider.refresh()),
                 vscode.commands.registerCommand('conan.refreshProfiles', () => profileProvider.refresh()),
                 vscode.commands.registerCommand('conan.refreshRemotes', () => remoteProvider.refresh()),
@@ -1187,50 +1180,6 @@ export function activate(context: vscode.ExtensionContext) {
                     }
                 });
         }
-    }
-}
-
-async function checkPythonDependencies(workspaceRoot: string): Promise<void> {
-    const requirementsPath = path.join(workspaceRoot, 'requirements.txt');
-
-    if (!fs.existsSync(requirementsPath)) {
-        vscode.window.showWarningMessage('requirements.txt not found. Python dependencies may not be installed.');
-        return;
-    }
-
-    try {
-        // Check if dependencies are installed
-        const result = await new Promise<string>((resolve, reject) => {
-            cp.exec('python -m pip list', (error, stdout, stderr) => {
-                if (error) {
-                    reject(error);
-                } else {
-                    resolve(stdout);
-                }
-            });
-        });
-
-        const installed = result.toLowerCase();
-        const requiredPackages = ['fastapi', 'uvicorn', 'conan'];
-        const missing = requiredPackages.filter(pkg => !installed.includes(pkg));
-
-        if (missing.length > 0) {
-            const install = await vscode.window.showWarningMessage(
-                `Missing Python dependencies: ${missing.join(', ')}. Install them?`,
-                'Install',
-                'Cancel'
-            );
-
-            if (install === 'Install') {
-                const terminal = vscode.window.createTerminal('Install Dependencies');
-                terminal.show();
-                terminal.sendText(`python -m pip install -r "${requirementsPath}"`);
-            }
-        } else {
-            vscode.window.showInformationMessage('All Python dependencies are installed ✅');
-        }
-    } catch (error) {
-        vscode.window.showErrorMessage(`Failed to check Python dependencies: ${error}`);
     }
 }
 
