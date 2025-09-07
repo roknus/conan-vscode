@@ -3,6 +3,7 @@ import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
+import { PythonExtension } from '@vscode/python-extension';
 
 type PackageStatus = 'none' | 'recipe' | 'recipe+binary'
 
@@ -64,17 +65,164 @@ let remoteStatusBarItem: vscode.StatusBarItem;
 class ConanServerManager {
     private serverProcess: cp.ChildProcess | null = null;
     private isServerRunning = false;
+    private pythonApi: PythonExtension | null = null;
+    private venvPath: string | null = null;
 
-    async startServer(workspacePath: string, extensionPath?: string): Promise<boolean> {
+    private async setupVirtualEnvironment(extensionPath: string, basePythonPath: string): Promise<string | null> {
+        try {
+            // Create venv directory in extension path
+            const venvDir = path.join(extensionPath, '.venv');
+            this.venvPath = venvDir;
+
+            // Check if venv already exists
+            const venvPythonPath = process.platform === 'win32' 
+                ? path.join(venvDir, 'Scripts', 'python.exe')
+                : path.join(venvDir, 'bin', 'python');
+
+            if (fs.existsSync(venvPythonPath)) {
+                console.log(`Using existing virtual environment: ${venvDir}`);
+                
+                // Verify the venv is working by checking Python version
+                try {
+                    const versionCheck = cp.spawnSync(venvPythonPath, ['--version'], { encoding: 'utf8' });
+                    if (versionCheck.status === 0) {
+                        console.log(`Virtual environment Python version: ${versionCheck.stdout.trim()}`);
+                        return venvPythonPath;
+                    } else {
+                        console.warn('Existing virtual environment appears to be corrupted, recreating...');
+                        // Remove the corrupted venv and recreate
+                        fs.rmSync(venvDir, { recursive: true, force: true });
+                    }
+                } catch (error) {
+                    console.warn('Failed to verify existing virtual environment, recreating...');
+                    fs.rmSync(venvDir, { recursive: true, force: true });
+                }
+            }
+
+            console.log(`Creating virtual environment at: ${venvDir}`);
+            vscode.window.showInformationMessage('Creating Python virtual environment for Conan extension...');
+            
+            // Create virtual environment
+            const createVenvProcess = cp.spawn(basePythonPath, ['-m', 'venv', venvDir], {
+                stdio: 'pipe',
+                env: { ...process.env }
+            });
+
+            let createVenvOutput = '';
+            createVenvProcess.stdout?.on('data', (data) => {
+                createVenvOutput += data.toString();
+            });
+
+            createVenvProcess.stderr?.on('data', (data) => {
+                createVenvOutput += data.toString();
+                console.error(`venv creation: ${data}`);
+            });
+
+            await new Promise((resolve, reject) => {
+                createVenvProcess.on('close', (code) => {
+                    if (code === 0) {
+                        resolve(void 0);
+                    } else {
+                        reject(new Error(`Failed to create virtual environment, exit code: ${code}\nOutput: ${createVenvOutput}`));
+                    }
+                });
+
+                createVenvProcess.on('error', (error) => {
+                    reject(new Error(`Failed to spawn venv creation process: ${error.message}`));
+                });
+            });
+
+            if (!fs.existsSync(venvPythonPath)) {
+                throw new Error('Virtual environment created but Python executable not found');
+            }
+
+            // Install dependencies from requirements.txt
+            const requirementsPath = path.join(extensionPath, 'requirements.txt');
+
+            // Check for requirements.txt in extension directory first (packaged version)
+            if (!fs.existsSync(requirementsPath)) {
+                console.warn('No requirements.txt found, proceeding without installing dependencies');
+                return venvPythonPath
+            }
+
+            console.log('Installing Python dependencies...');
+            vscode.window.showInformationMessage('Installing Python dependencies for Conan extension...');
+
+            // Use the first available requirements.txt
+            console.log(`Using requirements file: ${requirementsPath}`);
+            
+            const installProcess = cp.spawn(venvPythonPath, ['-m', 'pip', 'install', '-r', requirementsPath], {
+                stdio: 'pipe',
+                env: { ...process.env }
+            });
+
+            let installOutput = '';
+            installProcess.stdout?.on('data', (data) => {
+                installOutput += data.toString();
+                console.log(`pip install: ${data}`);
+            });
+
+            installProcess.stderr?.on('data', (data) => {
+                installOutput += data.toString();
+                console.error(`pip install error: ${data}`);
+            });
+
+            await new Promise((resolve, reject) => {
+                installProcess.on('close', (code) => {
+                    if (code === 0) {
+                        console.log('Dependencies installed successfully');
+                        vscode.window.showInformationMessage('Python dependencies installed successfully!');
+                        resolve(void 0);
+                    } else {
+                        reject(new Error(`Failed to install dependencies, exit code: ${code}\nOutput: ${installOutput}`));
+                    }
+                });
+
+                installProcess.on('error', (error) => {
+                    reject(new Error(`Failed to spawn pip install process: ${error.message}`));
+                });
+            });
+
+            return venvPythonPath;
+        } catch (error) {
+            console.error('Error setting up virtual environment:', error);
+            
+            // Provide more specific error messages
+            let errorMessage = 'Failed to setup Python environment';
+            if (error instanceof Error) {
+                if (error.message.includes('venv')) {
+                    errorMessage = 'Failed to create Python virtual environment. Ensure Python venv module is available.';
+                } else if (error.message.includes('pip install')) {
+                    errorMessage = 'Failed to install Python dependencies. Check your internet connection and Python setup.';
+                } else {
+                    errorMessage = `Failed to setup Python environment: ${error.message}`;
+                }
+            }
+            
+            vscode.window.showErrorMessage(errorMessage);
+            return null;
+        }
+    }
+
+    async startServer(workspacePath: string, extensionPath: string): Promise<boolean> {
         if (this.isServerRunning) {
             return true;
         }
 
         try {
-            // Check if Python extension is available
-            const pythonExtension = vscode.extensions.getExtension('ms-python.python');
-            if (!pythonExtension) {
-                vscode.window.showErrorMessage('Python extension is required for Conan server functionality');
+            this.pythonApi = await PythonExtension.api();
+
+            // Get the effective Python executable path (venv or system)
+            const executablePath = this.pythonApi.environments.getActiveEnvironmentPath();
+            if (!executablePath) {
+                vscode.window.showErrorMessage('No Python executable found. Please ensure Python is properly configured.');
+                return false;
+            }
+
+            // Setup virtual environment and get venv Python executable
+            const venvPythonPath = await this.setupVirtualEnvironment(extensionPath, executablePath.path);
+            if (!venvPythonPath) {
+                vscode.window.showErrorMessage('Failed to setup virtual environment for Conan extension.');
                 return false;
             }
 
@@ -105,15 +253,17 @@ class ConanServerManager {
             }
 
             console.log(`Starting Conan server with script: ${serverScript}`);
+            console.log(`Using virtual environment Python executable: ${venvPythonPath}`);
 
-            this.serverProcess = cp.spawn('python', [
+            this.serverProcess = cp.spawn(venvPythonPath, [
                 serverScript,
                 '--host', SERVER_HOST,
                 '--port', SERVER_PORT.toString(),
                 '--workspace', workspacePath
             ], {
                 cwd: workspacePath,
-                stdio: 'pipe'
+                stdio: 'pipe',
+                env: { ...process.env }
             });
 
             this.serverProcess.stdout?.on('data', (data) => {
@@ -150,6 +300,8 @@ class ConanServerManager {
             this.serverProcess = null;
         }
         this.isServerRunning = false;
+        // Note: We keep the venv directory for reuse in future sessions
+        // this.venvPath = null; // Commented out to reuse venv
     }
 
     async checkServerHealth(): Promise<boolean> {
@@ -176,6 +328,28 @@ class ConanServerManager {
     // Method to mark server as running (useful when detecting existing server)
     setServerRunning(running: boolean): void {
         this.isServerRunning = running;
+    }
+
+    // Get the virtual environment path if available
+    getVirtualEnvironmentPath(): string | null {
+        return this.venvPath;
+    }
+
+    // Clean up virtual environment (useful for troubleshooting)
+    async cleanupVirtualEnvironment(): Promise<boolean> {
+        if (!this.venvPath || !fs.existsSync(this.venvPath)) {
+            return true;
+        }
+
+        try {
+            console.log(`Removing virtual environment: ${this.venvPath}`);
+            fs.rmSync(this.venvPath, { recursive: true, force: true });
+            this.venvPath = null;
+            return true;
+        } catch (error) {
+            console.error('Failed to cleanup virtual environment:', error);
+            return false;
+        }
     }
 }
 

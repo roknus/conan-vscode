@@ -9,6 +9,7 @@ This is a VS Code extension project for Conan C++ package manager. Please use th
 - UI panel to display and manage packages, profiles, and remotes
 - Uses tree data providers for displaying hierarchical data
 - Webview panels for enhanced UI interactions
+- Python utilities are separated into `src/pythonUtils.ts` for reusability
 
 ## Conan Integration
 - Commands should execute Conan CLI commands (conan install, conan profile list, etc.)

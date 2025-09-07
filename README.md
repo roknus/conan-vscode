@@ -112,17 +112,15 @@ This will generate a `conan-package-manager-0.0.1.vsix` file that can be install
 ## 📋 Requirements
 
 - **VS Code**: Version 1.101.0 or higher
-- **Python Extension**: Required for server functionality
+- **Python Extension (ms-python.python)**: Required for server functionality
 - **Conan**: Must be installed and available in your system PATH
-- **Python Dependencies**: FastAPI, uvicorn, conan (auto-checked and installable)
 
 ## 🛠️ Installation
 
 1. Install the extension from the VS Code marketplace
-2. Ensure Python extension is installed
+2. Ensure Python extension (ms-python.python) is installed
 3. Ensure Conan is installed on your system
 4. Open a workspace containing `conanfile.txt` or `conanfile.py`
-5. The extension will offer to install Python dependencies automatically
 
 ## 🎯 Usage
 
@@ -140,7 +138,6 @@ This will generate a `conan-package-manager-0.0.1.vsix` file that can be install
 - `Conan: Upload Missing Packages` - Upload packages missing from remotes
 - `Conan: Start Conan API Server` - Start the FastAPI server
 - `Conan: Stop Conan API Server` - Stop the FastAPI server
-- `Conan: Check Python Dependencies` - Verify Python dependencies
 - `Conan: Select Active Host Profile` - Choose active host profile from status bar
 - `Conan: Select Active Build Profile` - Choose active build profile from status bar
 - `Conan: Select Active Remote` - Choose active remote from status bar
@@ -207,9 +204,8 @@ The extension shows visual indicators for package binary availability:
 
 The extension expects these files in your workspace:
 - `conanfile.txt` or `conanfile.py` - Your Conan dependencies
-- `requirements.txt` - Python dependencies (auto-created)
 
-**Note**: The `conan_server.py` FastAPI server script is included with the extension and does not need to be in your workspace.
+**Note**: The `conan_server.py` FastAPI server script is included with the extension and automatically manages its Python dependencies.
 
 ## 🔧 Configuration
 
@@ -221,13 +217,7 @@ The extension provides workspace-specific configuration options:
 - `conan.activeRemote` - Active Conan remote for package operations (default: "all")
 
 ### Python Dependencies
-The extension automatically checks for required Python packages:
-```txt
-fastapi>=0.104.0
-uvicorn[standard]>=0.24.0
-pydantic>=2.0.0
-conan>=2.0.0
-```
+The extension automatically manages its Python dependencies through a virtual environment.
 
 ### Server Configuration
 - **Host**: 127.0.0.1 (localhost)
@@ -285,9 +275,8 @@ The extension automatically activates when:
 - Restart VS Code after installing Conan
 
 ### Python dependencies missing
-- Use `Conan: Check Python Dependencies` command
-- Install automatically when prompted
-- Manual install: `pip install -r requirements.txt`
+- The extension manages its own Python dependencies automatically
+- If issues persist, restart VS Code to reinitialize the environment
 
 ### API Server issues
 - Check Python extension is installed and active
