@@ -4,6 +4,7 @@
   "description": "VS Code extension for Conan C++ package manager with commands to install packages and UI panels to manage packages, profiles, and remotes",
   "version": "0.0.1",
   "publisher": "roknus",
+  "icon": "conan-vscode.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/roknus/conan-vscode.git"
@@ -27,7 +28,8 @@
   ],
   "files": [
     "dist/**",
-    "requirement.txt",
+    "conan-vscode.png",
+    "requirements.txt",
     "README.md",
     "LICENSE"
   ],
