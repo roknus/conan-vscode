@@ -55,8 +55,7 @@ Thank you for your interest in contributing to the Conan Package Manager VS Code
 ### Creating VSIX Package
 To create a `.vsix` file for distribution:
 ```bash
-npm install -g @vscode/vsce
-vsce package
+npx @vscode/vsce package
 ```
 
 This will generate a `conan-package-manager-0.0.1.vsix` file that can be installed in VS Code.
