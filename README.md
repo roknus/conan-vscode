@@ -1,66 +1,8 @@
 # Conan Package Manager
 
-A comprehensive Visual Studio Code extension for managing Conan C++ packages, profiles, and remotes with advanced FastAPI server integration for enhanced package operations.
+A comprehensive Visual Studio Code extension for managing Conan C++ packages, profiles, and remotes.
 
-## � Building the Extension
-
-### Prerequisites
-- **Node.js**: Version 20.x or higher
-- **npm**: Latest version
-- **VS Code**: Version 1.101.0 or higher
-
-### Development Setup
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/roknus/conan-vscode.git
-   cd conan-vscode
-   ```
-
-2. **Install dependencies**:
-   ```bash
-   npm install
-   ```
-
-3. **Build the extension**:
-   ```bash
-   npm run compile
-   ```
-
-### Available Build Scripts
-- `npm run compile` - Compile the extension for debugging
-- `npm run package` - Build production-ready package
-- `npm run watch` - Watch mode for development (runs TypeScript and esbuild watchers)
-- `npm run watch:esbuild` - Watch mode for esbuild only
-- `npm run watch:tsc` - Watch mode for TypeScript checking only
-- `npm run lint` - Run ESLint on source files
-- `npm run check-types` - Type check without emitting files
-- `npm run test` - Run extension tests
-
-### Development Workflow
-1. **Start development mode**:
-   ```bash
-   npm run watch
-   ```
-   This runs both TypeScript type checking and esbuild compilation in watch mode.
-
-2. **Open in VS Code**: Press `F5` to launch a new Extension Development Host window for testing.
-
-3. **Package for distribution**:
-   ```bash
-   npm run package
-   ```
-   This creates the production build in the `dist/` directory.
-
-### Creating VSIX Package
-To create a `.vsix` file for distribution:
-```bash
-npm install -g @vscode/vsce
-vsce package
-```
-
-This will generate a `conan-package-manager-0.0.1.vsix` file that can be installed in VS Code.
-
-## �🚀 Features
+## 🚀 Features
 
 ### 🏗️ Activity Bar Integration
 - **Conan Explorer**: Dedicated activity bar panel with three main sections:
@@ -80,13 +22,10 @@ This will generate a `conan-package-manager-0.0.1.vsix` file that can be install
   - � `$(error)` - Incompatible package
   - �📦 `$(package)` - Status unknown (fallback)
 
-### 🔧 FastAPI Server Integration
-- **Required for All Operations**: All Conan operations now require the FastAPI server to be running
-- **Conan API Server**: Built-in FastAPI server for all package, profile, and remote operations
-- **Python Integration**: Leverages the Python extension for dependency management
+### 🔧 Advanced Server Integration
+- **Built-in Server**: Integrated server for enhanced package operations
 - **Real-time Status**: Server status monitoring with visual indicators
 - **Background Operations**: Upload packages in the background with progress tracking
-- **Centralized Logic**: All Conan CLI operations are handled by the backend server
 
 ### 👤 Profile Management
 - **Host & Build Profiles**: Support for both host and build profile management
@@ -127,7 +66,7 @@ This will generate a `conan-package-manager-0.0.1.vsix` file that can be install
 ### Quick Start
 1. Open a workspace with a conanfile.txt or conanfile.py
 2. Click the Conan icon in the activity bar
-3. **Start the API server** for advanced functionality (optional)
+3. **Start the server** for enhanced functionality (optional)
 4. Use the tree views to explore packages, profiles, and remotes
 5. Upload missing packages to your private remotes
 
@@ -136,32 +75,30 @@ This will generate a `conan-package-manager-0.0.1.vsix` file that can be install
 - `Conan: Create Profile` - Create a new Conan profile
 - `Conan: Add Remote` - Add a new Conan remote
 - `Conan: Upload Missing Packages` - Upload packages missing from remotes
-- `Conan: Start Conan API Server` - Start the FastAPI server
-- `Conan: Stop Conan API Server` - Stop the FastAPI server
+- `Conan: Start Server` - Start the integrated server
+- `Conan: Stop Server` - Stop the integrated server
 - `Conan: Select Active Host Profile` - Choose active host profile from status bar
 - `Conan: Select Active Build Profile` - Choose active build profile from status bar
 - `Conan: Select Active Remote` - Choose active remote from status bar
 
-### FastAPI Server Features
-The built-in FastAPI server is **required** for all extension functionality and provides:
-- **REST API** for all Conan operations (packages, profiles, remotes)
-- **Package Upload**: Upload missing packages using Conan Python API
+### Advanced Features
+The built-in server provides enhanced functionality:
+- **Package Upload**: Upload missing packages to remotes
 - **Background Processing**: Long-running operations don't block the UI
 - **Status Monitoring**: Real-time feedback on operations
-- **Centralized Conan Logic**: All file parsing and CLI operations handled by backend
-- **Binary Status Detection**: Server-side binary availability checking with remote-specific queries
+- **Binary Status Detection**: Automatic binary availability checking
 
 ### Upload Missing Packages Workflow
-1. **Start the API server** (required for all functionality)
+1. **Start the server** for enhanced functionality
 2. Use `Conan: Upload Missing Packages` command
 3. **Select target remote** from configured remotes
 4. The extension analyzes your conanfile and uploads missing dependencies
 5. **Monitor progress** through status updates
 
-⚠️ **Important**: The Conan API Server must be running for all extension features to work. Start it using:
-- The welcome notification when the extension activates
-- Command: `Conan: Start Conan API Server`
-- Command Palette: `Ctrl+Shift+P` → "Conan: Start Conan API Server"
+⚠️ **Important**: Start the server for enhanced functionality:
+- Use the welcome notification when the extension activates
+- Command: `Conan: Start Server`
+- Command Palette: `Ctrl+Shift+P` → "Conan: Start Server"
 
 ### Profile Management with Status Bar
 The extension provides convenient status bar items for profile management:
@@ -169,7 +106,7 @@ The extension provides convenient status bar items for profile management:
 1. **View Active Profiles**: Look for `$(person) host-profile` and `$(tools) build-profile` in the bottom status bar
 2. **Switch Profiles**: Click the status bar items to open quick pick menus
 3. **Profile Persistence**: Selected profiles are saved per workspace
-4. **Server Required**: Profile management requires the API server to be running
+4. **Server Required**: Enhanced functionality requires the server to be running
 5. **Auto-Detection**: New profiles are automatically detected and available for selection
 6. **Command Integration**: The active profiles are used for `conan install` and other operations
 
@@ -198,14 +135,11 @@ The extension shows visual indicators for package binary availability:
 | � `$(error)` | **Incompatible** | Package is incompatible with current configuration |
 | �📦 `$(package)` | **Unknown** | Binary status could not be determined (CLI fallback mode) |
 
-**Note**: Binary status checking requires the API server to be running for accurate results. In CLI fallback mode, status detection is limited. Binary availability is checked against the currently selected remote, providing more precise information for download and upload operations.
-
-## 📁 Project Files
+**Note**: Binary status checking requires the server to be running for accurate results. In CLI fallback mode, status detection is limited. Binary availability is checked against the currently selected remote, providing more precise information for download and upload operations.
 
 The extension expects these files in your workspace:
 - `conanfile.txt` or `conanfile.py` - Your Conan dependencies
 
-**Note**: The `conan_server.py` FastAPI server script is included with the extension and automatically manages its Python dependencies.
 
 ## 🔧 Configuration
 
@@ -215,14 +149,6 @@ The extension provides workspace-specific configuration options:
 - `conan.activeHostProfile` - Active Conan host profile for package operations (default: "default")
 - `conan.activeBuildProfile` - Active Conan build profile for package operations (default: "default")  
 - `conan.activeRemote` - Active Conan remote for package operations (default: "all")
-
-### Python Dependencies
-The extension automatically manages its Python dependencies through a virtual environment.
-
-### Server Configuration
-- **Host**: 127.0.0.1 (localhost)
-- **Port**: 8000
-- **API Documentation**: Available at http://127.0.0.1:8000/docs when server is running
 
 ## 📖 Example Usage
 
@@ -269,19 +195,9 @@ The extension automatically activates when:
 
 ## 🐛 Troubleshooting
 
-### Conan not found
-- Ensure Conan is installed: `pip install conan`
-- Verify Conan is in PATH: `conan --version`
-- Restart VS Code after installing Conan
-
-### Python dependencies missing
-- The extension manages its own Python dependencies automatically
-- If issues persist, restart VS Code to reinitialize the environment
-
-### API Server issues
-- Check Python extension is installed and active
-- Verify all dependencies are installed
-- Check VS Code developer console for server logs
+### Server issues
+- Ensure Python extension (ms-python.python) is installed and active
+- Restart VS Code if the server fails to start
 - Ensure port 8000 is not in use by another application
 
 ### Extension not activating
@@ -291,11 +207,12 @@ The extension automatically activates when:
 
 ## 🤝 Contributing
 
-We welcome contributions! Please visit our [GitHub repository](https://github.com/roknus/conan-vscode) to:
-- Report bugs and issues
-- Suggest new features
-- Submit pull requests
-- Improve documentation
+We welcome contributions! 
+
+- 📖 [Development Guide](CONTRIBUTING.md) - Setup instructions and development workflow
+- 🐛 [Report Issues](https://github.com/roknus/conan-vscode/issues) - Bug reports and feature requests
+- 💬 [Discussions](https://github.com/roknus/conan-vscode/discussions) - Community Q&A
+- 📚 [Repository](https://github.com/roknus/conan-vscode) - Source code and documentation
 
 ## 📄 License
 
