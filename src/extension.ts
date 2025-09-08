@@ -75,13 +75,13 @@ class ConanServerManager {
             this.venvPath = venvDir;
 
             // Check if venv already exists
-            const venvPythonPath = process.platform === 'win32' 
+            const venvPythonPath = process.platform === 'win32'
                 ? path.join(venvDir, 'Scripts', 'python.exe')
                 : path.join(venvDir, 'bin', 'python');
 
             if (fs.existsSync(venvPythonPath)) {
                 console.log(`Using existing virtual environment: ${venvDir}`);
-                
+
                 // Verify the venv is working by checking Python version
                 try {
                     const versionCheck = cp.spawnSync(venvPythonPath, ['--version'], { encoding: 'utf8' });
@@ -101,7 +101,7 @@ class ConanServerManager {
 
             console.log(`Creating virtual environment at: ${venvDir}`);
             vscode.window.showInformationMessage('Creating Python virtual environment for Conan extension...');
-            
+
             // Create virtual environment
             const createVenvProcess = cp.spawn(basePythonPath, ['-m', 'venv', venvDir], {
                 stdio: 'pipe',
@@ -150,7 +150,7 @@ class ConanServerManager {
 
             // Use the first available requirements.txt
             console.log(`Using requirements file: ${requirementsPath}`);
-            
+
             const installProcess = cp.spawn(venvPythonPath, ['-m', 'pip', 'install', '-r', requirementsPath], {
                 stdio: 'pipe',
                 env: { ...process.env }
@@ -186,7 +186,7 @@ class ConanServerManager {
             return venvPythonPath;
         } catch (error) {
             console.error('Error setting up virtual environment:', error);
-            
+
             // Provide more specific error messages
             let errorMessage = 'Failed to setup Python environment';
             if (error instanceof Error) {
@@ -198,7 +198,7 @@ class ConanServerManager {
                     errorMessage = `Failed to setup Python environment: ${error.message}`;
                 }
             }
-            
+
             vscode.window.showErrorMessage(errorMessage);
             return null;
         }
@@ -560,8 +560,8 @@ class ConanPackageProvider implements vscode.TreeDataProvider<ConanItem> {
                 return [new ConanItem(`API Error: ${error}`, vscode.TreeItemCollapsibleState.None, 'error')];
             }
         } else {
-            // Server not running - show message to start it
-            return [new ConanItem('Start Conan API Server to view packages', vscode.TreeItemCollapsibleState.None, 'info')];
+            // Server not running - show helpful message
+            return [new ConanItem('Conan API Server is not available.', vscode.TreeItemCollapsibleState.None, 'info')];
         }
     }
 }
@@ -602,8 +602,8 @@ class ConanProfileProvider implements vscode.TreeDataProvider<ConanItem> {
                 return [new ConanItem(`API Error: ${error}`, vscode.TreeItemCollapsibleState.None, 'error')];
             }
         } else {
-            // Server not running - show message to start it
-            return [new ConanItem('Start Conan API Server to view profiles', vscode.TreeItemCollapsibleState.None, 'info')];
+            // Server not running - show helpful message
+            return [new ConanItem('Conan API Server is not available.', vscode.TreeItemCollapsibleState.None, 'info')];
         }
     }
 }
@@ -646,8 +646,8 @@ class ConanRemoteProvider implements vscode.TreeDataProvider<ConanItem> {
                 return [new ConanItem(`API Error: ${error}`, vscode.TreeItemCollapsibleState.None, 'error')];
             }
         } else {
-            // Server not running - show message to start it
-            return [new ConanItem('Start Conan API Server to view remotes', vscode.TreeItemCollapsibleState.None, 'info')];
+            // Server not running - show helpful message
+            return [new ConanItem('Conan API Server is not available.', vscode.TreeItemCollapsibleState.None, 'info')];
         }
     }
 }
@@ -792,15 +792,7 @@ async function selectProfile(apiClient: ConanApiClient, serverManager: ConanServ
     try {
         // Always use API - require server to be running
         if (!serverManager.getServerRunning()) {
-            const start = await vscode.window.showInformationMessage(
-                'Conan API Server must be running to manage profiles',
-                'Start Server',
-                'Cancel'
-            );
-
-            if (start === 'Start Server') {
-                await vscode.commands.executeCommand('conan.startServer');
-            }
+            vscode.window.showErrorMessage('Conan API Server is not available.');
             return;
         }
 
@@ -885,15 +877,7 @@ async function selectRemote(apiClient: ConanApiClient, serverManager: ConanServe
     try {
         // Always use API - require server to be running
         if (!serverManager.getServerRunning()) {
-            const start = await vscode.window.showInformationMessage(
-                'Conan API Server must be running to manage remotes',
-                'Start Server',
-                'Cancel'
-            );
-
-            if (start === 'Start Server') {
-                await vscode.commands.executeCommand('conan.startServer');
-            }
+            vscode.window.showErrorMessage('Conan API Server is not available.');
             return;
         }
 
@@ -941,8 +925,8 @@ async function selectRemote(apiClient: ConanApiClient, serverManager: ConanServe
     }
 }
 
-// Check for existing server at startup (useful for debugging scenarios)
-async function checkForExistingServer(serverManager: ConanServerManager, apiClient: ConanApiClient): Promise<void> {
+// Check for existing server at startup and start if needed
+async function ensureServerRunning(serverManager: ConanServerManager, workspaceRoot: string, extensionPath: string): Promise<void> {
     try {
         console.log('Checking for existing Conan API server...');
         const isHealthy = await serverManager.checkServerHealth();
@@ -951,17 +935,24 @@ async function checkForExistingServer(serverManager: ConanServerManager, apiClie
             // Server is already running - mark it as running in our state
             serverManager.setServerRunning(true);
             console.log('Detected existing Conan API server running');
-
-            vscode.window.showInformationMessage(
-                'Conan API Server is already running (possibly from debug session)',
-                'Great!'
-            );
         } else {
-            console.log('No existing Conan API server detected');
+            console.log('No existing Conan API server detected, starting new instance...');
+            const success = await serverManager.startServer(workspaceRoot, extensionPath);
+
+            if (success) {
+                console.log('Conan API server started successfully');
+            } else {
+                console.error('Failed to start Conan API server');
+                vscode.window.showWarningMessage(
+                    'Failed to start Conan API server.'
+                );
+            }
         }
     } catch (error) {
-        console.log('Error checking for existing server:', error);
-        // Silently continue - this is just a startup check
+        console.log('Error ensuring server is running:', error);
+        vscode.window.showWarningMessage(
+            'Unable to start Conan API server. Some features may not be available.'
+        );
     }
 }
 
@@ -969,9 +960,6 @@ export function activate(context: vscode.ExtensionContext) {
     // Initialize server manager and API client
     const serverManager = new ConanServerManager();
     const apiClient = new ConanApiClient();
-
-    // Check for existing server at startup (e.g., debug server already running)
-    checkForExistingServer(serverManager, apiClient);
 
     // Check if workspace has conanfile
     const workspaceFolders = vscode.workspace.workspaceFolders;
@@ -983,6 +971,8 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.commands.executeCommand('setContext', 'workspaceHasConanfile', hasConanfile);
 
         if (hasConanfile) {
+            // Ensure server is running (check for existing or start new)
+            ensureServerRunning(serverManager, workspaceRoot, context.extensionPath);
             // Initialize tree data providers with server support
             const packageProvider = new ConanPackageProvider(workspaceRoot, apiClient, serverManager);
             const profileProvider = new ConanProfileProvider(apiClient, serverManager);
@@ -997,15 +987,7 @@ export function activate(context: vscode.ExtensionContext) {
             context.subscriptions.push(
                 vscode.commands.registerCommand('conan.installPackages', async () => {
                     if (!serverManager.getServerRunning()) {
-                        const start = await vscode.window.showErrorMessage(
-                            'Conan API Server must be running to install packages',
-                            'Start Server',
-                            'Cancel'
-                        );
-
-                        if (start === 'Start Server') {
-                            await vscode.commands.executeCommand('conan.startServer');
-                        }
+                        vscode.window.showErrorMessage('Conan API Server is not available.');
                         return;
                     }
 
@@ -1031,15 +1013,7 @@ export function activate(context: vscode.ExtensionContext) {
                     }
 
                     if (!serverManager.getServerRunning()) {
-                        const start = await vscode.window.showErrorMessage(
-                            'Conan API Server must be running to install packages',
-                            'Start Server',
-                            'Cancel'
-                        );
-
-                        if (start === 'Start Server') {
-                            await vscode.commands.executeCommand('conan.startServer');
-                        }
+                        vscode.window.showErrorMessage('Conan API Server is not available.');
                         return;
                     }
 
@@ -1076,15 +1050,7 @@ export function activate(context: vscode.ExtensionContext) {
 
                 vscode.commands.registerCommand('conan.createProfile', async () => {
                     if (!serverManager.getServerRunning()) {
-                        const start = await vscode.window.showErrorMessage(
-                            'Conan API Server must be running to create profiles',
-                            'Start Server',
-                            'Cancel'
-                        );
-
-                        if (start === 'Start Server') {
-                            await vscode.commands.executeCommand('conan.startServer');
-                        }
+                        vscode.window.showErrorMessage('Conan API Server is not available.');
                         return;
                     }
 
@@ -1106,15 +1072,7 @@ export function activate(context: vscode.ExtensionContext) {
 
                 vscode.commands.registerCommand('conan.addRemote', async () => {
                     if (!serverManager.getServerRunning()) {
-                        const start = await vscode.window.showErrorMessage(
-                            'Conan API Server must be running to add remotes',
-                            'Start Server',
-                            'Cancel'
-                        );
-
-                        if (start === 'Start Server') {
-                            await vscode.commands.executeCommand('conan.startServer');
-                        }
+                        vscode.window.showErrorMessage('Conan API Server is not available.');
                         return;
                     }
 
@@ -1143,17 +1101,8 @@ export function activate(context: vscode.ExtensionContext) {
 
                 vscode.commands.registerCommand('conan.uploadMissingPackages', async () => {
                     if (!serverManager.getServerRunning()) {
-                        const startServer = await vscode.window.showInformationMessage(
-                            'The Conan API server is required for uploading packages. Start it now?',
-                            'Start Server',
-                            'Cancel'
-                        );
-
-                        if (startServer === 'Start Server') {
-                            await vscode.commands.executeCommand('conan.startServer');
-                        } else {
-                            return;
-                        }
+                        vscode.window.showErrorMessage('Conan API Server is not available.');
+                        return;
                     }
 
                     const remotes = await apiClient.getRemotes();
@@ -1195,7 +1144,7 @@ export function activate(context: vscode.ExtensionContext) {
 
                 vscode.commands.registerCommand('conan.uploadLocalPackage', async (item?: ConanItem) => {
                     if (!serverManager.getServerRunning()) {
-                        vscode.window.showErrorMessage('Conan API Server must be running to upload packages');
+                        vscode.window.showErrorMessage('Conan API Server is not available.');
                         return;
                     }
 
@@ -1254,18 +1203,18 @@ export function activate(context: vscode.ExtensionContext) {
                         return;
                     }
 
-                    vscode.window.showInformationMessage('Starting Conan API server...');
+                    vscode.window.showInformationMessage('Restarting Conan API server...');
                     const success = await serverManager.startServer(workspaceRoot, context.extensionPath);
 
                     if (success) {
-                        vscode.window.showInformationMessage('Conan API server started successfully!');
+                        vscode.window.showInformationMessage('Conan API server restarted successfully!');
 
                         // Refresh all providers to use API
                         packageProvider.refresh();
                         profileProvider.refresh();
                         remoteProvider.refresh();
                     } else {
-                        vscode.window.showErrorMessage('Failed to start Conan API server. Check dependencies.');
+                        vscode.window.showErrorMessage('Failed to restart Conan API server.');
                     }
                 }),
 
@@ -1344,12 +1293,7 @@ export function activate(context: vscode.ExtensionContext) {
             }
 
             // Show welcome message
-            vscode.window.showInformationMessage('Conan Package Manager extension activated! 🎉', 'Start API Server')
-                .then(selection => {
-                    if (selection === 'Start API Server') {
-                        vscode.commands.executeCommand('conan.startServer');
-                    }
-                });
+            vscode.window.showInformationMessage('Conan Package Manager extension activated! 🎉');
         }
     }
 }
