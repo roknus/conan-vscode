@@ -142,7 +142,7 @@ class ConanServerManager {
             // Check for requirements.txt in extension directory first (packaged version)
             if (!fs.existsSync(requirementsPath)) {
                 console.warn('No requirements.txt found, proceeding without installing dependencies');
-                return venvPythonPath
+                return venvPythonPath;
             }
 
             console.log('Installing Python dependencies...');
@@ -258,8 +258,7 @@ class ConanServerManager {
             this.serverProcess = cp.spawn(venvPythonPath, [
                 serverScript,
                 '--host', SERVER_HOST,
-                '--port', SERVER_PORT.toString(),
-                '--workspace', workspacePath
+                '--port', SERVER_PORT.toString()
             ], {
                 cwd: workspacePath,
                 stdio: 'pipe',
@@ -401,12 +400,12 @@ class ConanApiClient {
         });
     }
 
-    async getPackages(): Promise<PackageInfo[]> {
-        return this.makeRequest(`/packages?host_profile=${encodeURIComponent(activeHostProfile)}&build_profile=${encodeURIComponent(activeBuildProfile)}`);
+    async getPackages(workspacePath: string): Promise<PackageInfo[]> {
+        return this.makeRequest(`/packages?workspace_path=${encodeURIComponent(workspacePath)}&host_profile=${encodeURIComponent(activeHostProfile)}&build_profile=${encodeURIComponent(activeBuildProfile)}`);
     }
 
-    async getPackagesForRemote(remoteName: string): Promise<PackageInfo[]> {
-        return this.makeRequest(`/packages?remote=${encodeURIComponent(remoteName)}&host_profile=${encodeURIComponent(activeHostProfile)}&build_profile=${encodeURIComponent(activeBuildProfile)}`);
+    async getPackagesForRemote(workspacePath: string, remoteName: string): Promise<PackageInfo[]> {
+        return this.makeRequest(`/packages?workspace_path=${encodeURIComponent(workspacePath)}&remote=${encodeURIComponent(remoteName)}&host_profile=${encodeURIComponent(activeHostProfile)}&build_profile=${encodeURIComponent(activeBuildProfile)}`);
     }
 
     async getProfiles(): Promise<Profile[]> {
@@ -417,8 +416,9 @@ class ConanApiClient {
         return this.makeRequest('/remotes');
     }
 
-    async installPackages(buildMissing: boolean = true, hostProfile: string, buildProfile: string): Promise<any> {
+    async installPackages(workspacePath: string, buildMissing: boolean = true, hostProfile: string, buildProfile: string): Promise<any> {
         return this.makeRequest('/install', 'POST', {
+            workspace_path: workspacePath,
             build_missing: buildMissing,
             host_profile: hostProfile,
             build_profile: buildProfile
@@ -450,8 +450,9 @@ class ConanApiClient {
         });
     }
 
-    async uploadMissingPackages(remoteName: string, packages: string[] = [], force: boolean = false): Promise<any> {
+    async uploadMissingPackages(workspacePath: string, remoteName: string, packages: string[] = [], force: boolean = false): Promise<any> {
         return this.makeRequest('/upload/missing', 'POST', {
+            workspace_path: workspacePath,
             remote_name: remoteName,
             packages: packages,
             host_profile: activeHostProfile,
@@ -474,9 +475,6 @@ class ConanApiClient {
         return this.makeRequest('/upload/status');
     }
 
-    async setWorkspace(workspacePath: string): Promise<any> {
-        return this.makeRequest(`/workspace/set?workspace_path=${encodeURIComponent(workspacePath)}`, 'POST');
-    }
 }
 
 // Tree data providers
@@ -517,9 +515,9 @@ class ConanPackageProvider implements vscode.TreeDataProvider<ConanItem> {
 
                 // Use remote-specific endpoint if active remote is set and not "all"
                 if (activeRemote && activeRemote !== 'all') {
-                    packages = await this.apiClient.getPackagesForRemote(activeRemote);
+                    packages = await this.apiClient.getPackagesForRemote(this.workspaceRoot, activeRemote);
                 } else {
-                    packages = await this.apiClient.getPackages();
+                    packages = await this.apiClient.getPackages(this.workspaceRoot);
                 }
 
                 return packages.map(pkg => {
@@ -1013,6 +1011,7 @@ export function activate(context: vscode.ExtensionContext) {
 
                     try {
                         await apiClient.installPackages(
+                            workspaceRoot,
                             true,
                             activeHostProfile,
                             activeBuildProfile
@@ -1170,7 +1169,7 @@ export function activate(context: vscode.ExtensionContext) {
 
                     if (selectedRemote) {
                         try {
-                            await apiClient.uploadMissingPackages(selectedRemote.label);
+                            await apiClient.uploadMissingPackages(workspaceRoot, selectedRemote.label);
                             vscode.window.showInformationMessage('Package upload started. Check the output panel for progress.');
 
                             // Poll upload status
@@ -1259,8 +1258,6 @@ export function activate(context: vscode.ExtensionContext) {
                     const success = await serverManager.startServer(workspaceRoot, context.extensionPath);
 
                     if (success) {
-                        await apiClient.setWorkspace(workspaceRoot);
-
                         vscode.window.showInformationMessage('Conan API server started successfully!');
 
                         // Refresh all providers to use API
