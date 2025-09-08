@@ -111,15 +111,8 @@ class RemoteAddRequest(BaseModel):
     url: str
     verify_ssl: bool = True
 
-# Global state
-server_state = {
-    "workspace": None,
-    "api_initialized": False
-}
-
-
-
-
+# Global variables
+conan_api: Optional[ConanAPI] = None
 
 @app.on_event("startup")
 async def startup_event():
@@ -127,11 +120,10 @@ async def startup_event():
     global conan_api
     try:
         conan_api = ConanAPI()
-        server_state["api_initialized"] = True
         print("Conan API initialized successfully")
     except Exception as e:
         print(f"Failed to initialize Conan API: {e}")
-        server_state["api_initialized"] = False
+        conan_api = None
 
 @app.get("/")
 async def root():
@@ -143,25 +135,16 @@ async def health_check():
     """Health check endpoint."""
     return {
         "status": "healthy",
-        "api_initialized": server_state["api_initialized"],
-        "workspace": server_state["workspace"]
+        "api_initialized": conan_api is not None
     }
 
-@app.post("/workspace/set")
-async def set_workspace(workspace_path: str):
-    """Set the current workspace path."""
-    if not os.path.exists(workspace_path):
-        raise HTTPException(status_code=400, detail="Workspace path does not exist")
-    
-    server_state["workspace"] = workspace_path
-    return {"message": f"Workspace set to {workspace_path}"}
-
 @app.get("/packages")
-async def get_packages(host_profile: str, build_profile: str, remote: Optional[str] = None) -> List[ConanPackage]:
+async def get_packages(workspace_path: str, host_profile: str, build_profile: str, remote: Optional[str] = None) -> List[ConanPackage]:
     """
     Get packages from conanfile in current workspace.
     
     Args:
+        workspace_path: Path to the workspace containing conanfile (required)
         host_profile: Host profile name (required)
         build_profile: Build profile name (required) 
         remote: Specific remote to check. If None, checks all configured remotes (optional)
@@ -169,10 +152,8 @@ async def get_packages(host_profile: str, build_profile: str, remote: Optional[s
     Returns:
         List of packages with their availability status across local cache and remote(s)
     """
-    if not server_state["workspace"]:
-        raise HTTPException(status_code=400, detail="No workspace set")
-    
-    workspace_path = server_state["workspace"]
+    if not os.path.exists(workspace_path):
+        raise HTTPException(status_code=400, detail="Workspace path does not exist")
     conanfile_txt = os.path.join(workspace_path, "conanfile.txt")
     conanfile_py = os.path.join(workspace_path, "conanfile.py")
     
@@ -336,16 +317,15 @@ async def get_remotes() -> List[ConanRemote]:
         raise HTTPException(status_code=500, detail=f"Error getting remotes: {str(e)}")
 
 @app.post("/install")
-async def install_packages(request: InstallRequest):
+async def install_packages(workspace_path: str, request: InstallRequest):
     """Install packages from conanfile."""
-    if not server_state["workspace"]:
-        raise HTTPException(status_code=400, detail="No workspace set")
+    if not os.path.exists(workspace_path):
+        raise HTTPException(status_code=400, detail="Workspace path does not exist")
     
     if not conan_api:
         raise HTTPException(status_code=500, detail="Conan API not initialized")
     
     try:
-        workspace_path = server_state["workspace"]
         conanfile_path = os.path.join(workspace_path, "conanfile.txt")
         if not os.path.exists(conanfile_path):
             conanfile_path = os.path.join(workspace_path, "conanfile.py")
@@ -494,25 +474,24 @@ async def add_remote(request: RemoteAddRequest):
         raise HTTPException(status_code=500, detail=f"Error adding remote: {str(e)}")
 
 @app.post("/upload/missing")
-async def upload_missing_packages(request: UploadRequest):
+async def upload_missing_packages(workspace_path: str, request: UploadRequest):
     """Upload missing packages to remote (synchronous)."""
-    if not server_state["workspace"]:
-        raise HTTPException(status_code=400, detail="No workspace set")
+    if not os.path.exists(workspace_path):
+        raise HTTPException(status_code=400, detail="Workspace path does not exist")
     
     if not conan_api:
         raise HTTPException(status_code=500, detail="Conan API not initialized")
     
     try:
         # Execute upload synchronously  
-        result = await upload_packages_task(request)
+        result = await upload_packages_task(workspace_path, request)
         return {"message": "Package upload completed", "status": "completed", "result": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
     
-async def upload_packages_task(request: UploadRequest):
+async def upload_packages_task(workspace_path: str, request: UploadRequest):
     """Background task to upload packages."""
     try:
-        workspace_path = server_state["workspace"]
         conanfile_path = os.path.join(workspace_path, "conanfile.py")
         
         if not os.path.exists(conanfile_path):
@@ -771,15 +750,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Conan VS Code Extension API Server")
     parser.add_argument("--host", default="127.0.0.1", help="Host to bind to")
     parser.add_argument("--port", type=int, default=8000, help="Port to bind to")
-    parser.add_argument("--workspace", help="Initial workspace path")
     
     args = parser.parse_args()
     
-    if args.workspace:
-        server_state["workspace"] = args.workspace
-    
     print(f"Starting Conan API server on {args.host}:{args.port}")
-    if args.workspace:
-        print(f"Initial workspace: {args.workspace}")
     
     uvicorn.run(app, host=args.host, port=args.port)
