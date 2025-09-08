@@ -9,6 +9,7 @@ import sys
 import argparse
 from typing import List, Optional
 from pathlib import Path
+from contextlib import asynccontextmanager
 
 try:
     from fastapi import FastAPI, HTTPException
@@ -36,7 +37,32 @@ except ImportError:
 # Import local utilities
 from conan_utils import is_authenticated
 
-app = FastAPI(title="Conan VS Code Extension API", version="1.0.0")
+# Global variables
+conan_api: Optional[ConanAPI] = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan event handler for FastAPI application."""
+    # Startup
+    global conan_api
+    try:
+        conan_api = ConanAPI()
+        print("Conan API initialized successfully")
+    except Exception as e:
+        print(f"Failed to initialize Conan API: {e}")
+        conan_api = None
+    
+    yield
+    
+    # Shutdown
+    # Add any cleanup code here if needed
+    pass
+
+app = FastAPI(
+    title="Conan VS Code Extension API", 
+    version="1.0.0",
+    lifespan=lifespan
+)
 
 # Add CORS middleware
 app.add_middleware(
@@ -46,9 +72,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Global variables
-conan_api: Optional[ConanAPI] = None
 
 # Pydantic models
 class PackageAvailability(BaseModel):
@@ -114,17 +137,6 @@ class RemoteAddRequest(BaseModel):
 # Global variables
 conan_api: Optional[ConanAPI] = None
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize Conan API on startup."""
-    global conan_api
-    try:
-        conan_api = ConanAPI()
-        print("Conan API initialized successfully")
-    except Exception as e:
-        print(f"Failed to initialize Conan API: {e}")
-        conan_api = None
-
 @app.get("/")
 async def root():
     """Root endpoint to check if server is running."""
@@ -135,7 +147,6 @@ async def health_check():
     """Health check endpoint."""
     return {
         "status": "healthy",
-        "api_initialized": conan_api is not None
     }
 
 @app.get("/packages")
