@@ -146,8 +146,8 @@ The extension expects these files in your workspace:
 ### Extension Settings
 The extension provides workspace-specific configuration options:
 
-- `conan.activeHostProfile` - Active Conan host profile for package operations (default: "default")
-- `conan.activeBuildProfile` - Active Conan build profile for package operations (default: "default")  
+- `conan.activeHostProfile` - Active Conan host profile for package operations
+- `conan.activeBuildProfile` - Active Conan build profile for package operations
 - `conan.activeRemote` - Active Conan remote for package operations (default: "all")
 
 ## 📖 Example Usage
