@@ -19,6 +19,9 @@ function logApiOperation(operation: string, details?: any) {
 
 type PackageStatus = 'none' | 'recipe' | 'recipe+binary'
 
+// Server state enumeration
+type ServerState = 'starting' | 'running' | 'stopped' | 'error';
+
 // TypeScript interfaces for API responses
 interface PackageAvailability {
     is_incompatible: boolean;
@@ -76,9 +79,36 @@ let remoteStatusBarItem: vscode.StatusBarItem;
 // Server state management
 class ConanServerManager {
     private serverProcess: cp.ChildProcess | null = null;
-    private isServerRunning = false;
+    private serverState: ServerState = 'stopped';
     private pythonApi: PythonExtension | null = null;
     private venvPath: string | null = null;
+    private stateChangeCallbacks: ((state: ServerState) => void)[] = [];
+
+    // Register callback for state changes
+    onStateChange(callback: (state: ServerState) => void): void {
+        this.stateChangeCallbacks.push(callback);
+    }
+
+    // Remove callback
+    removeStateChangeCallback(callback: (state: ServerState) => void): void {
+        const index = this.stateChangeCallbacks.indexOf(callback);
+        if (index > -1) {
+            this.stateChangeCallbacks.splice(index, 1);
+        }
+    }
+
+    // Notify all callbacks of state change
+    private notifyStateChange(newState: ServerState): void {
+        this.serverState = newState;
+        logger.info(`Server state changed to: ${newState}`);
+        this.stateChangeCallbacks.forEach(callback => {
+            try {
+                callback(newState);
+            } catch (error) {
+                logger.error('Error in state change callback:', error);
+            }
+        });
+    }
 
     private async setupVirtualEnvironment(extensionPath: string, basePythonPath: string): Promise<string | null> {
         try {
@@ -217,9 +247,27 @@ class ConanServerManager {
     }
 
     async startServer(workspacePath: string, extensionPath: string): Promise<boolean> {
-        if (this.isServerRunning) {
+        if (this.serverState === 'running') {
             return true;
         }
+
+        if (this.serverState === 'starting') {
+            // Already starting, wait for completion
+            return new Promise((resolve) => {
+                const checkState = () => {
+                    if (this.serverState === 'running') {
+                        resolve(true);
+                    } else if (this.serverState === 'error' || this.serverState === 'stopped') {
+                        resolve(false);
+                    } else {
+                        setTimeout(checkState, 500);
+                    }
+                };
+                checkState();
+            });
+        }
+
+        this.notifyStateChange('starting');
 
         try {
             this.pythonApi = await PythonExtension.api();
@@ -228,6 +276,7 @@ class ConanServerManager {
             const executablePath = this.pythonApi.environments.getActiveEnvironmentPath();
             if (!executablePath) {
                 vscode.window.showErrorMessage('No Python executable found. Please ensure Python is properly configured.');
+                this.notifyStateChange('error');
                 return false;
             }
 
@@ -235,6 +284,7 @@ class ConanServerManager {
             const venvPythonPath = await this.setupVirtualEnvironment(extensionPath, executablePath.path);
             if (!venvPythonPath) {
                 vscode.window.showErrorMessage('Failed to setup virtual environment for Conan extension.');
+                this.notifyStateChange('error');
                 return false;
             }
 
@@ -251,6 +301,7 @@ class ConanServerManager {
                 }
             } else {
                 vscode.window.showErrorMessage('conan_server.py not found. Please ensure the extension is properly installed.');
+                this.notifyStateChange('error');
                 return false;
             }
 
@@ -277,7 +328,13 @@ class ConanServerManager {
 
             this.serverProcess.on('close', (code) => {
                 logger.info(`Conan server exited with code ${code}`);
-                this.isServerRunning = false;
+                this.notifyStateChange('stopped');
+                this.serverProcess = null;
+            });
+
+            this.serverProcess.on('error', (error) => {
+                logger.error(`Conan server process error: ${error}`);
+                this.notifyStateChange('error');
                 this.serverProcess = null;
             });
 
@@ -286,11 +343,16 @@ class ConanServerManager {
 
             // Check if server is responding
             const isRunning = await this.checkServerHealth();
-            this.isServerRunning = isRunning;
-
-            return isRunning;
+            if (isRunning) {
+                this.notifyStateChange('running');
+                return true;
+            } else {
+                this.notifyStateChange('error');
+                return false;
+            }
         } catch (error) {
             vscode.window.showErrorMessage(`Failed to start Conan server: ${error}`);
+            this.notifyStateChange('error');
             return false;
         }
     }
@@ -300,7 +362,7 @@ class ConanServerManager {
             this.serverProcess.kill();
             this.serverProcess = null;
         }
-        this.isServerRunning = false;
+        this.notifyStateChange('stopped');
         // Note: We keep the venv directory for reuse in future sessions
         // this.venvPath = null; // Commented out to reuse venv
     }
@@ -322,13 +384,18 @@ class ConanServerManager {
         });
     }
 
+    getServerState(): ServerState {
+        return this.serverState;
+    }
+
+    // Backward compatibility method
     getServerRunning(): boolean {
-        return this.isServerRunning;
+        return this.serverState === 'running';
     }
 
     // Method to mark server as running (useful when detecting existing server)
     setServerRunning(running: boolean): void {
-        this.isServerRunning = running;
+        this.notifyStateChange(running ? 'running' : 'stopped');
     }
 
     // Get the virtual environment path if available
@@ -484,7 +551,12 @@ class ConanPackageProvider implements vscode.TreeDataProvider<ConanItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<ConanItem | undefined | null | void> = new vscode.EventEmitter<ConanItem | undefined | null | void>();
     readonly onDidChangeTreeData: vscode.Event<ConanItem | undefined | null | void> = this._onDidChangeTreeData.event;
 
-    constructor(private workspaceRoot: string, private apiClient: ConanApiClient, private serverManager: ConanServerManager) { }
+    constructor(private workspaceRoot: string, private apiClient: ConanApiClient, private serverManager: ConanServerManager) {
+        // Register for server state changes
+        this.serverManager.onStateChange((state) => {
+            this.refresh();
+        });
+    }
 
     refresh(): void {
         this._onDidChangeTreeData.fire();
@@ -507,63 +579,69 @@ class ConanPackageProvider implements vscode.TreeDataProvider<ConanItem> {
         }
     }
 
-    // Removed file parsing methods - all Conan operations delegated to backend API
-
     private async getConanPackages(): Promise<ConanItem[]> {
-        // Always try API first - if server is not running, show message to start it
-        if (this.serverManager.getServerRunning()) {
-            try {
-                let packages: PackageInfo[];
+        const serverState = this.serverManager.getServerState();
 
-                // Use remote-specific endpoint if active remote is set and not "all"
-                if (activeRemote && activeRemote !== 'all') {
-                    packages = await this.apiClient.getPackagesForRemote(this.workspaceRoot, activeRemote);
-                } else {
-                    packages = await this.apiClient.getPackages(this.workspaceRoot);
-                }
+        switch (serverState) {
+            case 'starting':
+                return [new ConanItem('Conan API Server is starting...', vscode.TreeItemCollapsibleState.None, 'info')];
 
-                return packages.map(pkg => {
-                    // Use the simplified availability model with enhanced remote checking
-                    let itemType: ItemType = 'package';
+            case 'running':
+                try {
+                    let packages: PackageInfo[];
 
-                    const availability = pkg.availability;
-
-                    // Determine icon based on availability
-                    if (availability.is_incompatible) {
-                        itemType = 'package-incompatible';
+                    // Use remote-specific endpoint if active remote is set and not "all"
+                    if (activeRemote && activeRemote !== 'all') {
+                        packages = await this.apiClient.getPackagesForRemote(this.workspaceRoot, activeRemote);
                     } else {
-                        // Check if package also exists remotely
-                        if (availability.local_status === 'recipe+binary' && availability.remote_status === 'recipe+binary') {
-                            itemType = 'package-available'; // Package available both remotely and locally
-                        } else if (availability.local_status === 'recipe+binary' && availability.remote_status !== 'recipe+binary') {
-                            itemType = 'package-uploadable'; // Package available for upload
-                        } else if (availability.remote_status === 'recipe+binary' && availability.local_status !== 'recipe+binary') {
-                            itemType = 'package-downloadable'; // Package available for download
-                        } else if (availability.local_status === 'recipe' || availability.remote_status === 'recipe') {
-                            itemType = 'package-buildable'; // Recipe available, can build locally
+                        packages = await this.apiClient.getPackages(this.workspaceRoot);
+                    }
+
+                    return packages.map(pkg => {
+                        let itemType: ItemType = 'package';
+
+                        const availability = pkg.availability;
+
+                        // Determine icon based on availability
+                        if (availability.is_incompatible) {
+                            itemType = 'package-incompatible';
                         } else {
-                            itemType = 'package-unknown';
+                            // Check if package also exists remotely
+                            if (availability.local_status === 'recipe+binary' && availability.remote_status === 'recipe+binary') {
+                                itemType = 'package-available'; // Package available both remotely and locally
+                            } else if (availability.local_status === 'recipe+binary' && availability.remote_status !== 'recipe+binary') {
+                                itemType = 'package-uploadable'; // Package available for upload
+                            } else if (availability.remote_status === 'recipe+binary' && availability.local_status !== 'recipe+binary') {
+                                itemType = 'package-downloadable'; // Package available for download
+                            } else if (availability.local_status === 'recipe' || availability.remote_status === 'recipe') {
+                                itemType = 'package-buildable'; // Recipe available, can build locally
+                            } else {
+                                itemType = 'package-unknown';
+                            }
+                        }
+
+                        return new ConanItem(pkg.ref, vscode.TreeItemCollapsibleState.None, itemType, pkg);
+                    });
+                } catch (error) {
+                    logger.warn('Package API request failed:', error);
+
+                    // Check if the error is about missing profiles
+                    if (error && typeof error === 'object' && 'message' in error) {
+                        const errorMessage = (error as any).message || error.toString();
+                        if (errorMessage.includes('select host and build profiles') || errorMessage.includes('profiles are required')) {
+                            return [new ConanItem('Please select host and build profiles first', vscode.TreeItemCollapsibleState.None, 'warning')];
                         }
                     }
 
-                    return new ConanItem(pkg.ref, vscode.TreeItemCollapsibleState.None, itemType, pkg);
-                });
-            } catch (error) {
-                logger.warn('Package API request failed:', error);
-
-                // Check if the error is about missing profiles
-                if (error && typeof error === 'object' && 'message' in error) {
-                    const errorMessage = (error as any).message || error.toString();
-                    if (errorMessage.includes('select host and build profiles') || errorMessage.includes('profiles are required')) {
-                        return [new ConanItem('Please select host and build profiles first', vscode.TreeItemCollapsibleState.None, 'warning')];
-                    }
+                    return [new ConanItem(`API Error: ${error}`, vscode.TreeItemCollapsibleState.None, 'error')];
                 }
 
-                return [new ConanItem(`API Error: ${error}`, vscode.TreeItemCollapsibleState.None, 'error')];
-            }
-        } else {
-            // Server not running - show helpful message
-            return [new ConanItem('Conan API Server is not available.', vscode.TreeItemCollapsibleState.None, 'info')];
+            case 'error':
+                return [new ConanItem('Conan API Server failed to start', vscode.TreeItemCollapsibleState.None, 'error')];
+
+            case 'stopped':
+            default:
+                return [new ConanItem('Conan API Server is not available', vscode.TreeItemCollapsibleState.None, 'info')];
         }
     }
 }
@@ -572,7 +650,14 @@ class ConanProfileProvider implements vscode.TreeDataProvider<ConanItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<ConanItem | undefined | null | void> = new vscode.EventEmitter<ConanItem | undefined | null | void>();
     readonly onDidChangeTreeData: vscode.Event<ConanItem | undefined | null | void> = this._onDidChangeTreeData.event;
 
-    constructor(private apiClient: ConanApiClient, private serverManager: ConanServerManager) { }
+    constructor(private apiClient: ConanApiClient, private serverManager: ConanServerManager) {
+        // Register for server state changes
+        this.serverManager.onStateChange((state) => {
+            if (state === 'running' || state === 'stopped' || state === 'error') {
+                this.refresh();
+            }
+        });
+    }
 
     refresh(): void {
         this._onDidChangeTreeData.fire();
@@ -591,21 +676,30 @@ class ConanProfileProvider implements vscode.TreeDataProvider<ConanItem> {
     }
 
     private async getConanProfiles(): Promise<ConanItem[]> {
-        // Always use API - if server is not running, show message to start it
-        if (this.serverManager.getServerRunning()) {
-            try {
-                const profiles = await this.apiClient.getProfiles();
-                if (profiles.length === 0) {
-                    return [new ConanItem('No profiles found', vscode.TreeItemCollapsibleState.None, 'info')];
+        const serverState = this.serverManager.getServerState();
+
+        switch (serverState) {
+            case 'starting':
+                return [new ConanItem('Conan API Server is starting...', vscode.TreeItemCollapsibleState.None, 'info')];
+
+            case 'running':
+                try {
+                    const profiles = await this.apiClient.getProfiles();
+                    if (profiles.length === 0) {
+                        return [new ConanItem('No profiles found', vscode.TreeItemCollapsibleState.None, 'info')];
+                    }
+                    return profiles.map(profile => new ConanItem(profile.name, vscode.TreeItemCollapsibleState.None, 'profile'));
+                } catch (error) {
+                    logger.warn('Profile API request failed:', error);
+                    return [new ConanItem(`API Error: ${error}`, vscode.TreeItemCollapsibleState.None, 'error')];
                 }
-                return profiles.map(profile => new ConanItem(profile.name, vscode.TreeItemCollapsibleState.None, 'profile'));
-            } catch (error) {
-                logger.warn('Profile API request failed:', error);
-                return [new ConanItem(`API Error: ${error}`, vscode.TreeItemCollapsibleState.None, 'error')];
-            }
-        } else {
-            // Server not running - show helpful message
-            return [new ConanItem('Conan API Server is not available.', vscode.TreeItemCollapsibleState.None, 'info')];
+
+            case 'error':
+                return [new ConanItem('Conan API Server failed to start', vscode.TreeItemCollapsibleState.None, 'error')];
+
+            case 'stopped':
+            default:
+                return [new ConanItem('Conan API Server is not available', vscode.TreeItemCollapsibleState.None, 'info')];
         }
     }
 }
@@ -614,7 +708,14 @@ class ConanRemoteProvider implements vscode.TreeDataProvider<ConanItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<ConanItem | undefined | null | void> = new vscode.EventEmitter<ConanItem | undefined | null | void>();
     readonly onDidChangeTreeData: vscode.Event<ConanItem | undefined | null | void> = this._onDidChangeTreeData.event;
 
-    constructor(private apiClient: ConanApiClient, private serverManager: ConanServerManager) { }
+    constructor(private apiClient: ConanApiClient, private serverManager: ConanServerManager) {
+        // Register for server state changes
+        this.serverManager.onStateChange((state) => {
+            if (state === 'running' || state === 'stopped' || state === 'error') {
+                this.refresh();
+            }
+        });
+    }
 
     refresh(): void {
         this._onDidChangeTreeData.fire();
@@ -633,23 +734,32 @@ class ConanRemoteProvider implements vscode.TreeDataProvider<ConanItem> {
     }
 
     private async getConanRemotes(): Promise<ConanItem[]> {
-        // Always use API - if server is not running, show message to start it
-        if (this.serverManager.getServerRunning()) {
-            try {
-                const remotes = await this.apiClient.getRemotes();
-                if (remotes.length === 0) {
-                    return [new ConanItem('No remotes configured', vscode.TreeItemCollapsibleState.None, 'info')];
+        const serverState = this.serverManager.getServerState();
+
+        switch (serverState) {
+            case 'starting':
+                return [new ConanItem('Conan API Server is starting...', vscode.TreeItemCollapsibleState.None, 'info')];
+
+            case 'running':
+                try {
+                    const remotes = await this.apiClient.getRemotes();
+                    if (remotes.length === 0) {
+                        return [new ConanItem('No remotes configured', vscode.TreeItemCollapsibleState.None, 'info')];
+                    }
+                    return remotes.map(remote =>
+                        new ConanItem(`${remote.name} (${remote.url})`, vscode.TreeItemCollapsibleState.None, 'remote')
+                    );
+                } catch (error) {
+                    logger.warn('Remote API request failed:', error);
+                    return [new ConanItem(`API Error: ${error}`, vscode.TreeItemCollapsibleState.None, 'error')];
                 }
-                return remotes.map(remote =>
-                    new ConanItem(`${remote.name} (${remote.url})`, vscode.TreeItemCollapsibleState.None, 'remote')
-                );
-            } catch (error) {
-                logger.warn('Remote API request failed:', error);
-                return [new ConanItem(`API Error: ${error}`, vscode.TreeItemCollapsibleState.None, 'error')];
-            }
-        } else {
-            // Server not running - show helpful message
-            return [new ConanItem('Conan API Server is not available.', vscode.TreeItemCollapsibleState.None, 'info')];
+
+            case 'error':
+                return [new ConanItem('Conan API Server failed to start', vscode.TreeItemCollapsibleState.None, 'error')];
+
+            case 'stopped':
+            default:
+                return [new ConanItem('Conan API Server is not available', vscode.TreeItemCollapsibleState.None, 'info')];
         }
     }
 }
