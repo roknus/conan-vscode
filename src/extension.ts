@@ -5,6 +5,18 @@ import * as path from 'path';
 import * as http from 'http';
 import { PythonExtension } from '@vscode/python-extension';
 
+// Global logger instance
+let logger: vscode.LogOutputChannel;
+
+// Utility function for logging API operations
+function logApiOperation(operation: string, details?: any) {
+    if (details) {
+        logger.debug(`API: ${operation}`, details);
+    } else {
+        logger.debug(`API: ${operation}`);
+    }
+}
+
 type PackageStatus = 'none' | 'recipe' | 'recipe+binary'
 
 // TypeScript interfaces for API responses
@@ -252,8 +264,8 @@ class ConanServerManager {
                 }
             }
 
-            console.log(`Starting Conan server with script: ${serverScript}`);
-            console.log(`Using virtual environment Python executable: ${venvPythonPath}`);
+            logger.info(`Starting Conan server with script: ${serverScript}`);
+            logger.info(`Using virtual environment Python executable: ${venvPythonPath}`);
 
             this.serverProcess = cp.spawn(venvPythonPath, [
                 serverScript,
@@ -266,15 +278,15 @@ class ConanServerManager {
             });
 
             this.serverProcess.stdout?.on('data', (data) => {
-                console.log(`Conan Server: ${data}`);
+                logger.debug(`Conan Server stdout: ${data.toString().trim()}`);
             });
 
             this.serverProcess.stderr?.on('data', (data) => {
-                console.error(`Conan Server Error: ${data}`);
+                logger.error(`Conan Server stderr: ${data.toString().trim()}`);
             });
 
             this.serverProcess.on('close', (code) => {
-                console.log(`Conan server exited with code ${code}`);
+                logger.info(`Conan server exited with code ${code}`);
                 this.isServerRunning = false;
                 this.serverProcess = null;
             });
@@ -547,7 +559,7 @@ class ConanPackageProvider implements vscode.TreeDataProvider<ConanItem> {
                     return new ConanItem(pkg.ref, vscode.TreeItemCollapsibleState.None, itemType, pkg);
                 });
             } catch (error) {
-                console.log('API request failed:', error);
+                logger.warn('Package API request failed:', error);
 
                 // Check if the error is about missing profiles
                 if (error && typeof error === 'object' && 'message' in error) {
@@ -598,7 +610,7 @@ class ConanProfileProvider implements vscode.TreeDataProvider<ConanItem> {
                 }
                 return profiles.map(profile => new ConanItem(profile.name, vscode.TreeItemCollapsibleState.None, 'profile'));
             } catch (error) {
-                console.log('API request failed:', error);
+                logger.warn('Profile API request failed:', error);
                 return [new ConanItem(`API Error: ${error}`, vscode.TreeItemCollapsibleState.None, 'error')];
             }
         } else {
@@ -642,7 +654,7 @@ class ConanRemoteProvider implements vscode.TreeDataProvider<ConanItem> {
                     new ConanItem(`${remote.name} (${remote.url})`, vscode.TreeItemCollapsibleState.None, 'remote')
                 );
             } catch (error) {
-                console.log('API request failed:', error);
+                logger.warn('Remote API request failed:', error);
                 return [new ConanItem(`API Error: ${error}`, vscode.TreeItemCollapsibleState.None, 'error')];
             }
         } else {
@@ -928,21 +940,21 @@ async function selectRemote(apiClient: ConanApiClient, serverManager: ConanServe
 // Check for existing server at startup and start if needed
 async function ensureServerRunning(serverManager: ConanServerManager, workspaceRoot: string, extensionPath: string): Promise<void> {
     try {
-        console.log('Checking for existing Conan API server...');
+        logger.info('Checking for existing Conan API server...');
         const isHealthy = await serverManager.checkServerHealth();
 
         if (isHealthy) {
             // Server is already running - mark it as running in our state
             serverManager.setServerRunning(true);
-            console.log('Detected existing Conan API server running');
+            logger.info('Detected existing Conan API server running');
         } else {
-            console.log('No existing Conan API server detected, starting new instance...');
+            logger.info('No existing Conan API server detected, starting new instance...');
             const success = await serverManager.startServer(workspaceRoot, extensionPath);
 
             if (success) {
-                console.log('Conan API server started successfully');
+                logger.info('Conan API server started successfully');
             } else {
-                console.error('Failed to start Conan API server');
+                logger.error('Failed to start Conan API server');
                 vscode.window.showWarningMessage(
                     'Failed to start Conan API server.'
                 );
@@ -957,6 +969,12 @@ async function ensureServerRunning(serverManager: ConanServerManager, workspaceR
 }
 
 export function activate(context: vscode.ExtensionContext) {
+    // Initialize logger first
+    logger = vscode.window.createOutputChannel('Conan Package Manager', { log: true });
+    context.subscriptions.push(logger);
+
+    logger.info('🚀 Conan Package Manager extension starting...');
+
     // Initialize server manager and API client
     const serverManager = new ConanServerManager();
     const apiClient = new ConanApiClient();
@@ -986,6 +1004,7 @@ export function activate(context: vscode.ExtensionContext) {
             // Register commands
             context.subscriptions.push(
                 vscode.commands.registerCommand('conan.installPackages', async () => {
+                    logger.info('🔧 Installing all packages...');
                     if (!serverManager.getServerRunning()) {
                         vscode.window.showErrorMessage('Conan API Server is not available.');
                         return;
@@ -998,16 +1017,19 @@ export function activate(context: vscode.ExtensionContext) {
                             activeHostProfile,
                             activeBuildProfile
                         );
+                        logger.info(`✅ Package installation started successfully with profiles: host=${activeHostProfile}, build=${activeBuildProfile}`);
                         vscode.window.showInformationMessage(`Package installation started via API server with profiles: host=${activeHostProfile}, build=${activeBuildProfile}`);
                         // Refresh package view to show updated status
                         packageProvider.refresh();
                     } catch (error) {
+                        logger.error(`❌ Package installation failed:`, error);
                         vscode.window.showErrorMessage(`Package installation failed: ${error}`);
                     }
                 }),
 
                 vscode.commands.registerCommand('conan.installPackage', async (item?: ConanItem) => {
                     if (!item || !item.packageInfo) {
+                        logger.warn('⚠️ No package selected for installation');
                         vscode.window.showErrorMessage('No package selected for installation');
                         return;
                     }
@@ -1018,6 +1040,7 @@ export function activate(context: vscode.ExtensionContext) {
                     }
 
                     const packageRef = item.packageInfo.ref;
+                    logger.info(`📦 Installing package: ${packageRef}`);
 
                     // Show installation options
                     const options = await vscode.window.showQuickPick([
@@ -1199,6 +1222,7 @@ export function activate(context: vscode.ExtensionContext) {
 
                 vscode.commands.registerCommand('conan.startServer', async () => {
                     if (serverManager.getServerRunning()) {
+                        logger.info('ℹ️ Conan API server is already running');
                         vscode.window.showInformationMessage('Conan API server is already running');
                         return;
                     }
@@ -1266,30 +1290,30 @@ export function activate(context: vscode.ExtensionContext) {
             if (savedHostProfile) {
                 activeHostProfile = savedHostProfile;
                 updateHostProfileStatusBar();
-                console.log(`Loaded saved host profile: ${activeHostProfile}`);
+                logger.debug(`Loaded saved host profile: ${activeHostProfile}`);
             } else {
-                console.log(`Using default host profile: ${activeHostProfile}`);
+                logger.debug(`Using default host profile: ${activeHostProfile}`);
             }
 
             const savedBuildProfile = vscode.workspace.getConfiguration('conan').get<string>('activeBuildProfile');
             if (savedBuildProfile) {
                 activeBuildProfile = savedBuildProfile;
                 updateBuildProfileStatusBar();
-                console.log(`Loaded saved build profile: ${activeBuildProfile}`);
+                logger.debug(`Loaded saved build profile: ${activeBuildProfile}`);
             } else {
-                console.log(`Using default build profile: ${activeBuildProfile}`);
+                logger.debug(`Using default build profile: ${activeBuildProfile}`);
             }
 
-            console.log(`Final profiles after loading: Host=${activeHostProfile}, Build=${activeBuildProfile}`);
+            logger.info(`Final profiles after loading: Host=${activeHostProfile}, Build=${activeBuildProfile}`);
 
             // Load saved active remote from workspace configuration
             const savedRemote = vscode.workspace.getConfiguration('conan').get<string>('activeRemote');
             if (savedRemote) {
                 activeRemote = savedRemote;
                 updateRemoteStatusBar();
-                console.log(`Loaded saved remote: ${activeRemote}`);
+                logger.debug(`Loaded saved remote: ${activeRemote}`);
             } else {
-                console.log(`Using default remote: ${activeRemote}`);
+                logger.debug(`Using default remote: ${activeRemote}`);
             }
 
             // Show welcome message
