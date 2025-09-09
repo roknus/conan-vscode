@@ -250,18 +250,8 @@ class ConanServerManager {
                     serverScript = path.join(extensionPath, 'conan_server.py');
                 }
             } else {
-                serverScript = path.join(workspacePath, 'conan_server.py');
-            }
-
-            if (!fs.existsSync(serverScript)) {
-                // Try workspace as fallback
-                const workspaceServerScript = path.join(workspacePath, 'conan_server.py');
-                if (fs.existsSync(workspaceServerScript)) {
-                    serverScript = workspaceServerScript;
-                } else {
-                    vscode.window.showErrorMessage('conan_server.py not found. Please ensure the extension is properly installed.');
-                    return false;
-                }
+                vscode.window.showErrorMessage('conan_server.py not found. Please ensure the extension is properly installed.');
+                return false;
             }
 
             logger.info(`Starting Conan server with script: ${serverScript}`);
