@@ -733,7 +733,7 @@ async def check_package_availability(package_ref: str, host_profile: str, build_
             profile_build=profile_build,
             lockfile=None,
             remotes=remotes,
-            update=None  # Don't update, only check what's available
+            update=["*"]
         )
 
         # Analyze binaries to see what's available
