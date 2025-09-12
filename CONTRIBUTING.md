@@ -105,6 +105,26 @@ For development testing:
 2. Open a workspace with `conanfile.txt` or `conanfile.py`
 3. Test extension functionality
 
+### Testing with External Backend
+To test with an external Python backend server:
+
+1. **Start the Python server separately**:
+   ```bash
+   python conan_server.py --host 127.0.0.1 --port 8000
+   ```
+
+2. **Launch extension with external backend**:
+   - Use the "Run Extension with External Backend" launch configuration in VS Code
+   - Or set the environment variable manually:
+     ```bash
+     export CONAN_BACKEND_URL=http://127.0.0.1:8000
+     ```
+   - Then press `F5` to launch Extension Development Host
+
+3. **Use the compound launch configuration**:
+   - Select "Extension + External Backend" from the launch configurations
+   - This will start both the Python server and the extension simultaneously
+
 ## 📦 Packaging Requirements
 
 ⚠️ **CRITICAL**: When adding new Python files:
@@ -136,14 +156,29 @@ const copyFilesPlugin = {
 3. Use VS Code Developer Tools (`Help > Toggle Developer Tools`)
 
 ### Python Server Debugging
-1. Check server logs in VS Code Output panel
-2. Server runs on `http://127.0.0.1:8000`
-3. API documentation available at `http://127.0.0.1:8000/docs`
+The extension can work with both embedded and external Python servers:
+
+#### Embedded Server (Default)
+- Extension automatically starts its own Python server
+- Server logs appear in VS Code Output panel ("Conan Package Manager")
+- Server runs on a dynamically assigned port
+
+#### External Server (For Development)
+- Start server manually: `python conan_server.py --host 127.0.0.1 --port 8000`
+- Set `CONAN_BACKEND_URL=http://127.0.0.1:8000` environment variable
+- Use "Python API Server" launch configuration for debugging the server
+- API documentation available at `http://127.0.0.1:8000/docs`
+
+### Environment Variables
+- `CONAN_BACKEND_URL`: URL of external backend server (optional)
+  - Example: `http://127.0.0.1:8000`
+  - If not set, extension starts its own embedded server
 
 ### Common Issues
 - **Virtual environment issues**: Check Python extension is installed
 - **Build failures**: Ensure all Python files are in esbuild.js
 - **Server not starting**: Verify Python dependencies and port availability
+- **External backend not connecting**: Check the `CONAN_BACKEND_URL` environment variable is set correctly
 
 ## 🤝 Contributing Guidelines
 

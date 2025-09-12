@@ -64,9 +64,6 @@ type ItemType =
 // Server configuration
 const SERVER_HOST = '127.0.0.1';
 
-// Add backend URL configuration
-const BACKEND_URL_ARG = '--backend-url';
-
 // Global state for active profiles
 let activeHostProfile: string = 'default';
 let activeBuildProfile: string = 'default';
@@ -279,28 +276,43 @@ class ConanServerManager {
 
         this.notifyStateChange('starting');
 
-        // If backend URL is already set, try to connect to external server
+        // If backend URL is already set, connect to external server
         if (this.backendUrl) {
-            logger.info(`Attempting to connect to external backend: ${this.backendUrl}`);
-            try {
-                const isHealthy = await this.checkServerHealth();
-                if (isHealthy) {
-                    this.notifyStateChange('running');
-                    logger.info(`Connected to external backend: ${this.backendUrl}`);
-                    return true;
-                } else {
-                    logger.error(`External backend is not responding: ${this.backendUrl}`);
-                    this.notifyStateChange('error');
-                    return false;
-                }
-            } catch (error) {
-                logger.error(`Failed to connect to external backend: ${error}`);
-                this.notifyStateChange('error');
-                return false;
-            }
+            return await this.connectToServer();
         }
 
         // Start our own server
+        return await this.startOwnServer(workspacePath, extensionPath);
+    }
+
+    async connectToServer(): Promise<boolean> {
+        if (!this.backendUrl) {
+            logger.error('No backend URL provided for connection');
+            this.notifyStateChange('error');
+            return false;
+        }
+
+        logger.info(`Attempting to connect to external backend: ${this.backendUrl}`);
+        
+        try {
+            const isHealthy = await this.checkServerHealth();
+            if (isHealthy) {
+                this.notifyStateChange('running');
+                logger.info(`Connected to external backend: ${this.backendUrl}`);
+                return true;
+            } else {
+                logger.error(`External backend is not responding: ${this.backendUrl}`);
+                this.notifyStateChange('error');
+                return false;
+            }
+        } catch (error) {
+            logger.error(`Failed to connect to external backend: ${error}`);
+            this.notifyStateChange('error');
+            return false;
+        }
+    }
+
+    private async startOwnServer(workspacePath: string, extensionPath: string): Promise<boolean> {
         try {
             this.pythonApi = await PythonExtension.api();
 
@@ -1131,19 +1143,16 @@ export function activate(context: vscode.ExtensionContext) {
 
     logger.info('🚀 Conan Package Manager extension starting...');
 
-    // Check for backend URL argument
-    let backendUrl: string | undefined = undefined;
-    const args = process.argv;
-    const urlIndex = args.findIndex(arg => arg === BACKEND_URL_ARG);
-    if (urlIndex !== -1 && urlIndex + 1 < args.length) {
-        const urlArg = args[urlIndex + 1];
+    // Check for backend URL in environment variables
+    let backendUrl: string | undefined = process.env.CONAN_BACKEND_URL;
+    if (backendUrl) {
         try {
             // Validate URL format
-            new URL(urlArg);
-            backendUrl = urlArg;
-            logger.info(`Found backend URL argument: ${urlArg}`);
+            new URL(backendUrl);
+            logger.info(`Found backend URL in environment: ${backendUrl}`);
         } catch (error) {
-            logger.error(`Invalid backend URL provided: ${urlArg}`);
+            logger.error(`Invalid backend URL in environment: ${backendUrl}`);
+            backendUrl = undefined;
         }
     }
 
@@ -1161,11 +1170,14 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.commands.executeCommand('setContext', 'workspaceHasConanfile', hasConanfile);
 
         if (hasConanfile) {
-            // Only start server if we don't already have a backend URL
-            if (!serverManager.backendUrl) {
-                serverManager.startServer(workspaceRoot, context.extensionPath);
+            // Connect to external server or start our own
+            if (serverManager.backendUrl) {
+                logger.info(`Using external backend URL: ${serverManager.backendUrl}`);
+                // Connect to the external server and validate it's running
+                serverManager.connectToServer();
             } else {
-                logger.info(`Using existing backend URL: ${serverManager.backendUrl}`);
+                // Start our own embedded server
+                serverManager.startServer(workspaceRoot, context.extensionPath);
             }
 
             // Initialize tree data providers with server support
