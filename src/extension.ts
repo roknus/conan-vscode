@@ -63,8 +63,9 @@ type ItemType =
 
 // Server configuration
 const SERVER_HOST = '127.0.0.1';
-const SERVER_PORT = 8000;
-const SERVER_URL = `http://${SERVER_HOST}:${SERVER_PORT}`;
+
+// Add backend URL configuration
+const BACKEND_URL_ARG = '--backend-url';
 
 // Global state for active profiles
 let activeHostProfile: string = 'default';
@@ -83,6 +84,15 @@ class ConanServerManager {
     private pythonApi: PythonExtension | null = null;
     private venvPath: string | null = null;
     private stateChangeCallbacks: ((state: ServerState) => void)[] = [];
+    private serverPort: number = 0;
+    public backendUrl: string | null = null;
+
+    constructor(backendUrl?: string) {
+        if (backendUrl) {
+            this.backendUrl = backendUrl;
+            logger.info(`Using external backend server: ${backendUrl}`);
+        }
+    }
 
     // Register callback for state changes
     onStateChange(callback: (state: ServerState) => void): void {
@@ -269,6 +279,28 @@ class ConanServerManager {
 
         this.notifyStateChange('starting');
 
+        // If backend URL is already set, try to connect to external server
+        if (this.backendUrl) {
+            logger.info(`Attempting to connect to external backend: ${this.backendUrl}`);
+            try {
+                const isHealthy = await this.checkServerHealth();
+                if (isHealthy) {
+                    this.notifyStateChange('running');
+                    logger.info(`Connected to external backend: ${this.backendUrl}`);
+                    return true;
+                } else {
+                    logger.error(`External backend is not responding: ${this.backendUrl}`);
+                    this.notifyStateChange('error');
+                    return false;
+                }
+            } catch (error) {
+                logger.error(`Failed to connect to external backend: ${error}`);
+                this.notifyStateChange('error');
+                return false;
+            }
+        }
+
+        // Start our own server
         try {
             this.pythonApi = await PythonExtension.api();
 
@@ -308,18 +340,39 @@ class ConanServerManager {
             logger.info(`Starting Conan server with script: ${serverScript}`);
             logger.info(`Using virtual environment Python executable: ${venvPythonPath}`);
 
+            // Start server with port 0 to get any available port
             this.serverProcess = cp.spawn(venvPythonPath, [
                 serverScript,
                 '--host', SERVER_HOST,
-                '--port', SERVER_PORT.toString()
+                '--port', '0'  // Let server choose any available port
             ], {
                 cwd: workspacePath,
                 stdio: 'pipe',
                 env: { ...process.env }
             });
 
-            this.serverProcess.stdout?.on('data', (data) => {
-                logger.debug(`Conan Server stdout: ${data.toString().trim()}`);
+            // Wait for server to output its port
+            const portPromise = new Promise<number>((resolve, reject) => {
+                let portReceived = false;
+                const timeout = setTimeout(() => {
+                    if (!portReceived) {
+                        reject(new Error('Timeout waiting for server port'));
+                    }
+                }, 10000); // 10 second timeout
+
+                this.serverProcess!.stdout?.on('data', (data) => {
+                    const output = data.toString();
+                    logger.debug(`Conan Server stdout: ${output.trim()}`);
+
+                    // Look for port information
+                    const portMatch = output.match(/CONAN_SERVER_PORT:(\d+)/);
+                    if (portMatch && !portReceived) {
+                        portReceived = true;
+                        clearTimeout(timeout);
+                        const port = parseInt(portMatch[1], 10);
+                        resolve(port);
+                    }
+                });
             });
 
             this.serverProcess.stderr?.on('data', (data) => {
@@ -330,23 +383,38 @@ class ConanServerManager {
                 logger.info(`Conan server exited with code ${code}`);
                 this.notifyStateChange('stopped');
                 this.serverProcess = null;
+                this.serverPort = 0;
+                this.backendUrl = null;
             });
 
             this.serverProcess.on('error', (error) => {
                 logger.error(`Conan server process error: ${error}`);
                 this.notifyStateChange('error');
                 this.serverProcess = null;
+                this.serverPort = 0;
+                this.backendUrl = null;
             });
 
-            // Wait a bit for server to start
-            await new Promise(resolve => setTimeout(resolve, 3000));
+            // Wait for server to provide its port
+            try {
+                this.serverPort = await portPromise;
+                this.backendUrl = `http://${SERVER_HOST}:${this.serverPort}`;
+                logger.info(`Server started on port ${this.serverPort}`);
 
-            // Check if server is responding
-            const isRunning = await this.checkServerHealth();
-            if (isRunning) {
-                this.notifyStateChange('running');
-                return true;
-            } else {
+                // Wait a bit more for server to fully start
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
+                // Check if server is responding
+                const isRunning = await this.checkServerHealth();
+                if (isRunning) {
+                    this.notifyStateChange('running');
+                    return true;
+                } else {
+                    this.notifyStateChange('error');
+                    return false;
+                }
+            } catch (error) {
+                logger.error(`Failed to get server port: ${error}`);
                 this.notifyStateChange('error');
                 return false;
             }
@@ -358,18 +426,27 @@ class ConanServerManager {
     }
 
     async stopServer(): Promise<void> {
+        // Only stop our own server process, not external ones
         if (this.serverProcess) {
             this.serverProcess.kill();
             this.serverProcess = null;
+            this.serverPort = 0;
+            this.backendUrl = null;
+            this.notifyStateChange('stopped');
         }
-        this.notifyStateChange('stopped');
+        else {
+            logger.info('No server process to stop (external backend in use)');
+        }
         // Note: We keep the venv directory for reuse in future sessions
         // this.venvPath = null; // Commented out to reuse venv
     }
 
     async checkServerHealth(): Promise<boolean> {
+        if (!this.backendUrl) {
+            return false;
+        }
         return new Promise((resolve) => {
-            const req = http.get(`${SERVER_URL}/health`, (res) => {
+            const req = http.get(`${this.backendUrl}/health`, (res) => {
                 resolve(res.statusCode === 200);
             });
 
@@ -423,9 +500,17 @@ class ConanServerManager {
 
 // HTTP client for server communication
 class ConanApiClient {
+    constructor(private serverManager: ConanServerManager) { }
+
     async makeRequest(endpoint: string, method: string = 'GET', data?: any): Promise<any> {
         return new Promise((resolve, reject) => {
-            const url = new URL(endpoint, SERVER_URL);
+            const backendUrl = this.serverManager.backendUrl;
+            if (!backendUrl) {
+                reject(new Error('Backend URL not available'));
+                return;
+            }
+
+            const url = new URL(endpoint, backendUrl);
             const options = {
                 hostname: url.hostname,
                 port: url.port,
@@ -1037,36 +1122,7 @@ async function selectRemote(apiClient: ConanApiClient, serverManager: ConanServe
     }
 }
 
-// Check for existing server at startup and start if needed
-async function ensureServerRunning(serverManager: ConanServerManager, workspaceRoot: string, extensionPath: string): Promise<void> {
-    try {
-        logger.info('Checking for existing Conan API server...');
-        const isHealthy = await serverManager.checkServerHealth();
-
-        if (isHealthy) {
-            // Server is already running - mark it as running in our state
-            serverManager.setServerRunning(true);
-            logger.info('Detected existing Conan API server running');
-        } else {
-            logger.info('No existing Conan API server detected, starting new instance...');
-            const success = await serverManager.startServer(workspaceRoot, extensionPath);
-
-            if (success) {
-                logger.info('Conan API server started successfully');
-            } else {
-                logger.error('Failed to start Conan API server');
-                vscode.window.showWarningMessage(
-                    'Failed to start Conan API server.'
-                );
-            }
-        }
-    } catch (error) {
-        console.log('Error ensuring server is running:', error);
-        vscode.window.showWarningMessage(
-            'Unable to start Conan API server. Some features may not be available.'
-        );
-    }
-}
+// Remove the ensureServerRunning function since we always start our own server
 
 export function activate(context: vscode.ExtensionContext) {
     // Initialize logger first
@@ -1075,9 +1131,25 @@ export function activate(context: vscode.ExtensionContext) {
 
     logger.info('🚀 Conan Package Manager extension starting...');
 
+    // Check for backend URL argument
+    let backendUrl: string | undefined = undefined;
+    const args = process.argv;
+    const urlIndex = args.findIndex(arg => arg === BACKEND_URL_ARG);
+    if (urlIndex !== -1 && urlIndex + 1 < args.length) {
+        const urlArg = args[urlIndex + 1];
+        try {
+            // Validate URL format
+            new URL(urlArg);
+            backendUrl = urlArg;
+            logger.info(`Found backend URL argument: ${urlArg}`);
+        } catch (error) {
+            logger.error(`Invalid backend URL provided: ${urlArg}`);
+        }
+    }
+
     // Initialize server manager and API client
-    const serverManager = new ConanServerManager();
-    const apiClient = new ConanApiClient();
+    const serverManager = new ConanServerManager(backendUrl);
+    const apiClient = new ConanApiClient(serverManager);
 
     // Check if workspace has conanfile
     const workspaceFolders = vscode.workspace.workspaceFolders;
@@ -1089,8 +1161,13 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.commands.executeCommand('setContext', 'workspaceHasConanfile', hasConanfile);
 
         if (hasConanfile) {
-            // Ensure server is running (check for existing or start new)
-            ensureServerRunning(serverManager, workspaceRoot, context.extensionPath);
+            // Only start server if we don't already have a backend URL
+            if (!serverManager.backendUrl) {
+                serverManager.startServer(workspaceRoot, context.extensionPath);
+            } else {
+                logger.info(`Using existing backend URL: ${serverManager.backendUrl}`);
+            }
+
             // Initialize tree data providers with server support
             const packageProvider = new ConanPackageProvider(workspaceRoot, apiClient, serverManager);
             const profileProvider = new ConanProfileProvider(apiClient, serverManager);
