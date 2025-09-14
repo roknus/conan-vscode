@@ -118,7 +118,6 @@ class UploadLocalRequest(BaseModel):
     remote_name: str
     package_ref: str
     host_profile: str
-    build_profile: str
     force: bool = False
 
 

@@ -1,6 +1,6 @@
 from conan import ConanFile
 
-class EcsMultiplayerFrameworkConan(ConanFile):
+class TestConan(ConanFile):
     name = "test_package"
     version = "0.1.0"
     
