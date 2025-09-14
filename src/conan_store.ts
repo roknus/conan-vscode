@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { getLogger } from './logger';
-import { ItemType } from './tree_data_providers/conan_item';
+import { PackageItemType } from './tree_data_providers/conan_package_item';
 
 // Server state enumeration
 export type ServerState = 'starting' | 'running' | 'stopped' | 'error';
@@ -22,6 +22,7 @@ export interface PackageInfo {
 
 export interface Profile {
     name: string;
+    path: string;
 }
 
 export interface Remote {
@@ -334,7 +335,7 @@ export class ConanStore {
         return this.currentTask !== null;
     }
 
-    getPackageLoadingType(packageRef: string): ItemType | null {
+    getPackageLoadingType(packageRef: string): PackageItemType | null {
         if (!this.currentTask || this.currentTask.packageRef !== packageRef) {
             return null;
         }

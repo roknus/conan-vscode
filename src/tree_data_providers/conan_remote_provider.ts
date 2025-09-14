@@ -1,18 +1,18 @@
 import * as vscode from 'vscode';
 import { ConanStore } from '../conan_store';
-import { ConanItem } from './conan_item';
+import { ConanRemoteItem } from './conan_remote_item';
 import { getLogger } from '../logger';
 
-export class ConanRemoteProvider implements vscode.TreeDataProvider<ConanItem> {
-    private _onDidChangeTreeData: vscode.EventEmitter<ConanItem | undefined | null | void> = new vscode.EventEmitter<ConanItem | undefined | null | void>();
-    readonly onDidChangeTreeData: vscode.Event<ConanItem | undefined | null | void> = this._onDidChangeTreeData.event;
+export class ConanRemoteProvider implements vscode.TreeDataProvider<ConanRemoteItem | vscode.TreeItem> {
+    private _onDidChangeTreeData: vscode.EventEmitter<void> = new vscode.EventEmitter<void>();
+    readonly onDidChangeTreeData: vscode.Event<void> = this._onDidChangeTreeData.event;
 
-    constructor(private conanStore: ConanStore) {   
+    constructor(private conanStore: ConanStore) {
         // Register for server state changes
         this.conanStore.onServerStateChange((state) => {
             this._onDidChangeTreeData.fire();
         });
-        
+
         // Register for data changes
         this.conanStore.onDataChange(() => {
             this._onDidChangeTreeData.fire();
@@ -24,11 +24,11 @@ export class ConanRemoteProvider implements vscode.TreeDataProvider<ConanItem> {
         });
     }
 
-    getTreeItem(element: ConanItem): vscode.TreeItem {
+    getTreeItem(element: ConanRemoteItem | vscode.TreeItem): vscode.TreeItem {
         return element;
     }
 
-    getChildren(element?: ConanItem): Thenable<ConanItem[]> {
+    getChildren(element?: vscode.TreeItem): Thenable<(vscode.TreeItem)[]> {
         if (element) {
             return Promise.resolve([]);
         } else {
@@ -36,33 +36,59 @@ export class ConanRemoteProvider implements vscode.TreeDataProvider<ConanItem> {
         }
     }
 
-    private async getConanRemotes(): Promise<ConanItem[]> {
+    private async getConanRemotes(): Promise<(vscode.TreeItem)[]> {
         const serverState = this.conanStore.getServerState();
 
         switch (serverState) {
-            case 'starting':
-                return [new ConanItem('Conan API Server is starting...', vscode.TreeItemCollapsibleState.None, 'info')];
+            case 'starting': {
+                const item = new vscode.TreeItem('Conan API Server is starting...', vscode.TreeItemCollapsibleState.None);
+                item.iconPath = new vscode.ThemeIcon('info');
+                item.contextValue = 'info';
+                item.tooltip = 'Conan API Server is starting...';
+                item.description = '';
+                return [item];
+            }
 
             case 'running':
                 try {
                     const remotes = this.conanStore.getRemotes();
                     if (!remotes || remotes.length === 0) {
-                        return [new ConanItem('No remotes configured', vscode.TreeItemCollapsibleState.None, 'info')];
+                        const item = new vscode.TreeItem('Conan API Server failed to start', vscode.TreeItemCollapsibleState.None);
+                        item.iconPath = new vscode.ThemeIcon('error');
+                        item.contextValue = 'error';
+                        item.tooltip = 'Conan API Server failed to start';
+                        item.description = '';
+                        return [item];
                     }
-                    return remotes.map(remote =>
-                        new ConanItem(`${remote.name} (${remote.url})`, vscode.TreeItemCollapsibleState.None, 'remote')
-                    );
+                    return remotes.map(remote => new ConanRemoteItem({ name: remote.name, url: remote.url }));
                 } catch (error) {
                     getLogger().warn('Remote API request failed:', error);
-                    return [new ConanItem(`API Error: ${error}`, vscode.TreeItemCollapsibleState.None, 'error')];
+                    const item = new vscode.TreeItem(`API Error: ${error}`, vscode.TreeItemCollapsibleState.None);
+                    item.iconPath = new vscode.ThemeIcon('error');
+                    item.contextValue = 'error';
+                    item.tooltip = `API Error: ${error}`;
+                    item.description = '';
+                    return [item];
                 }
 
-            case 'error':
-                return [new ConanItem('Conan API Server failed to start', vscode.TreeItemCollapsibleState.None, 'error')];
+            case 'error': {
+                const item = new vscode.TreeItem('Conan API Server failed to start', vscode.TreeItemCollapsibleState.None);
+                item.iconPath = new vscode.ThemeIcon('error');
+                item.contextValue = 'error';
+                item.tooltip = 'Conan API Server failed to start';
+                item.description = '';
+                return [item];
+            }
 
             case 'stopped':
-            default:
-                return [new ConanItem('Conan API Server is not available', vscode.TreeItemCollapsibleState.None, 'info')];
+            default: {
+                const item = new vscode.TreeItem('Conan API Server is not available', vscode.TreeItemCollapsibleState.None);
+                item.iconPath = new vscode.ThemeIcon('info');
+                item.contextValue = 'info';
+                item.tooltip = 'Conan API Server is not available';
+                item.description = '';
+                return [item];
+            }
         }
     }
 }

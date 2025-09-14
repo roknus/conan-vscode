@@ -1,30 +1,22 @@
 import * as vscode from 'vscode';
 import { PackageInfo } from '../conan_store';
 
-// Valid item types for tree items
-export type ItemType =
-    // Package types
+// Valid item types for package tree items only
+export type PackageItemType =
     | 'package-available'
     | 'package-downloadable'
     | 'package-uploadable'
     | 'package-buildable'
     | 'package-incompatible'
     | 'package-unknown'
-    | 'package-installing' // Installing package
-    | 'package-uploading' // Uploading package
-    | 'package' // generic package
-    // Non-package types
-    | 'profile'
-    | 'remote'
-    | 'info'
-    | 'error'
-    | 'warning';
+    | 'package-installing'
+    | 'package-uploading';
 
-export class ConanItem extends vscode.TreeItem {
+export class ConanPackageItem extends vscode.TreeItem {
     constructor(
         public readonly label: string,
         public readonly collapsibleState: vscode.TreeItemCollapsibleState,
-        public readonly itemType: ItemType,
+        public readonly itemType: PackageItemType,
         public readonly packageInfo?: PackageInfo
     ) {
         super(label, collapsibleState);
@@ -54,13 +46,10 @@ export class ConanItem extends vscode.TreeItem {
             this.tooltip = this.label;
         }
 
-        // Set context value for package items to enable context menu
-        if (itemType.startsWith('package') && packageInfo) {
-            this.contextValue = itemType; // Use itemType directly for context value
-        }
+        // Set context value for menu contributions
+        this.contextValue = itemType;
 
         switch (itemType) {
-            // Icons for the simplified availability model
             case 'package-available':
                 this.iconPath = new vscode.ThemeIcon('layers-active');
                 this.tooltip += ' (available)';
@@ -92,26 +81,6 @@ export class ConanItem extends vscode.TreeItem {
             case 'package-uploading':
                 this.iconPath = new vscode.ThemeIcon('loading~spin');
                 this.tooltip += ' (uploading...)';
-                break;
-
-            // Non-package item types
-            case 'package':
-                this.iconPath = new vscode.ThemeIcon('package');
-                break;
-            case 'profile':
-                this.iconPath = new vscode.ThemeIcon('person');
-                break;
-            case 'remote':
-                this.iconPath = new vscode.ThemeIcon('globe');
-                break;
-            case 'info':
-                this.iconPath = new vscode.ThemeIcon('info');
-                break;
-            case 'error':
-                this.iconPath = new vscode.ThemeIcon('error');
-                break;
-            case 'warning':
-                this.iconPath = new vscode.ThemeIcon('warning');
                 break;
         }
     }

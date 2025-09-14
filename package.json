@@ -119,6 +119,12 @@
         "title": "Select Active Remote",
         "category": "Conan",
         "icon": "$(globe)"
+      },
+      {
+        "command": "conan.openProfileFile",
+        "title": "Open File",
+        "category": "Conan",
+        "icon": "$(go-to-file)"
       }
     ],
     "views": {
@@ -192,16 +198,17 @@
           "command": "conan.uploadLocalPackage",
           "when": "view == conan.packages && viewItem == package-uploadable",
           "group": "inline"
+        },
+        {
+          "command": "conan.openProfileFile",
+          "when": "view == conan.profiles && viewItem == profile",
+          "group": "navigation"
         }
       ],
       "commandPalette": [
         {
           "command": "conan.installPackages",
           "when": "workspaceHasConanfile"
-        },
-        {
-          "command": "conan.installPackage",
-          "when": "false"
         },
         {
           "command": "conan.createProfile",
@@ -214,10 +221,6 @@
         {
           "command": "conan.uploadMissingPackages",
           "when": "workspaceHasConanfile"
-        },
-        {
-          "command": "conan.uploadLocalPackage",
-          "when": "false"
         },
         {
           "command": "conan.startServer",
