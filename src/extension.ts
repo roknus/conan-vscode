@@ -4,10 +4,11 @@ import * as path from 'path';
 import { ConanStore, Remote, TaskType } from './conan_store';
 import { ConanServerManager } from './conan_server_manager';
 import { ConanApiClient } from './conan_api_client';
-import { ConanItem } from './tree_data_providers/conan_item';
+import { ConanPackageItem } from './tree_data_providers/conan_package_item';
 import { ConanRemoteProvider } from './tree_data_providers/conan_remote_provider';
 import { ConanProfileProvider } from './tree_data_providers/conan_profile_provider';
 import { ConanPackageProvider } from './tree_data_providers/conan_package_provider';
+import { ConanProfileItem } from './tree_data_providers/conan_profile_item';
 import { initializeLogger } from './logger';
 
 // Global logger instance
@@ -287,7 +288,7 @@ async function installAllPackages(conanStore: ConanStore, apiClient: ConanApiCli
     refreshPackages(conanStore, apiClient);
 }
 
-async function installSinglePackage(conanStore: ConanStore, apiClient: ConanApiClient, item?: ConanItem): Promise<void> {
+async function installSinglePackage(conanStore: ConanStore, apiClient: ConanApiClient, item?: ConanPackageItem): Promise<void> {
     if (!item || !item.packageInfo) {
         logger.warn('⚠️ No package selected for installation');
         vscode.window.showErrorMessage('No package selected for installation');
@@ -487,7 +488,7 @@ async function uploadMissingPackages(conanStore: ConanStore, apiClient: ConanApi
     }
 }
 
-async function uploadLocalPackage(conanStore: ConanStore, apiClient: ConanApiClient, item?: ConanItem): Promise<void> {
+async function uploadLocalPackage(conanStore: ConanStore, apiClient: ConanApiClient, item?: ConanPackageItem): Promise<void> {
     if (conanStore.isTaskRunning()) {
         vscode.window.showWarningMessage('Another operation is in progress. Please wait for it to complete.');
         return;
@@ -589,6 +590,27 @@ async function stopServer(conanStore: ConanStore, serverManager: ConanServerMana
     conanStore.clearPackageCache();
 }
 
+async function openProfileFile(item?: ConanPackageItem | ConanProfileItem): Promise<void> {
+    let resourceUri: vscode.Uri | undefined;
+    
+    if (item instanceof ConanProfileItem) {
+        resourceUri = item.resourceUri;
+    } else if (item && item.resourceUri) {
+        resourceUri = item.resourceUri;
+    }
+    
+    if (!resourceUri) {
+        vscode.window.showErrorMessage('No profile file selected');
+        return;
+    }
+
+    try {
+        await vscode.commands.executeCommand('vscode.open', resourceUri);
+    } catch (error) {
+        vscode.window.showErrorMessage(`Failed to open profile file: ${error}`);
+    }
+}
+
 export function activate(context: vscode.ExtensionContext) {
     // Initialize logger first
     logger = vscode.window.createOutputChannel('Conan Package Manager', { log: true });
@@ -675,7 +697,7 @@ export function activate(context: vscode.ExtensionContext) {
                     installAllPackages(conanStore, apiClient);
                 }),
 
-                vscode.commands.registerCommand('conan.installPackage', (item?: ConanItem) => {
+                vscode.commands.registerCommand('conan.installPackage', (item?: ConanPackageItem) => {
                     installSinglePackage(conanStore, apiClient, item);
                 }),
 
@@ -691,7 +713,7 @@ export function activate(context: vscode.ExtensionContext) {
                     uploadMissingPackages(conanStore, apiClient);
                 }),
 
-                vscode.commands.registerCommand('conan.uploadLocalPackage', (item?: ConanItem) => {
+                vscode.commands.registerCommand('conan.uploadLocalPackage', (item?: ConanPackageItem) => {
                     uploadLocalPackage(conanStore, apiClient, item);
                 }),
 
@@ -725,6 +747,10 @@ export function activate(context: vscode.ExtensionContext) {
 
                 vscode.commands.registerCommand('conan.selectRemote', () => {
                     selectRemote(conanStore);
+                }),
+
+                vscode.commands.registerCommand('conan.openProfileFile', (item?: ConanPackageItem | ConanProfileItem) => {
+                    openProfileFile(item);
                 })
             );
 

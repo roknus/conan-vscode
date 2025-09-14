@@ -313,17 +313,22 @@ async def get_profiles() -> List[ConanProfile]:
             status_code=500, detail="Conan API not initialized")
 
     try:
-        # Use Conan API to list profiles
-        profiles_path = conan_api.config.home() + "/profiles"
+        # Use Conan ProfileAPI to list profiles
+        profile_names = conan_api.profiles.list()
         profiles = []
 
-        if os.path.exists(profiles_path):
-            for filename in os.listdir(profiles_path):
-                if filename not in ['.', '..'] and not filename.startswith('.'):
-                    profile_path = os.path.join(profiles_path, filename)
-                    if os.path.isfile(profile_path):
-                        profiles.append(ConanProfile(
-                            name=filename, path=profile_path))
+        for profile_name in profile_names:
+            try:
+                # Use ProfileAPI's get_path method instead of manual path combination
+                profile_path = conan_api.profiles.get_path(profile_name)
+                
+                profiles.append(ConanProfile(
+                    name=profile_name, 
+                    path=profile_path
+                ))
+            except Exception as e:
+                print(f"Error processing profile {profile_name}: {e}")
+                continue
 
         return profiles
     except Exception as e:
