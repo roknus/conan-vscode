@@ -7,7 +7,7 @@ This server provides REST API endpoints for Conan operations.
 import os
 import sys
 import argparse
-from typing import List, Optional
+from typing import List, Optional, Dict
 from pathlib import Path
 from contextlib import asynccontextmanager
 
@@ -30,6 +30,7 @@ try:
     from conan.internal.graph.graph import CONTEXT_BUILD
     from conan.internal.graph.graph import BINARY_BUILD, BINARY_CACHE, BINARY_DOWNLOAD, BINARY_INVALID
     from conan.internal.graph.graph import RECIPE_DOWNLOADED, RECIPE_INCACHE, RECIPE_UPDATED
+    from conan.internal.model.settings import load_settings_yml
 except ImportError:
     print("ERROR: Conan Python API not found. Make sure Conan 2.x is installed.")
     sys.exit(1)
@@ -74,7 +75,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Pydantic models
+
+class ConanSettings(BaseModel):
+    """Conan settings structure."""
+    path: str                       # Path to settings file in home folder
+
+    os: Dict[str, dict] = {}        # e.g., {"Windows": {}, "Linux": {}}
+    arch: List[str] = []            # e.g., ["x86_64", "armv8"]
+    # e.g., {"gcc": {"versions": ["9", "10"]}, "clang": {"versions": ["11", "12"]}}
+    compiler: Dict[str, dict] = {}
+    build_type: List[str | None] = []      # e.g., ["Debug", "Release"]
 
 
 class PackageAvailability(BaseModel):
@@ -138,6 +148,7 @@ class InstallPackageRequest(BaseModel):
 class ProfileCreateRequest(BaseModel):
     name: str
     detect: bool = True
+    settings: Dict[str, str] = {}
 
 
 class RemoteAddRequest(BaseModel):
@@ -321,9 +332,9 @@ async def get_profiles() -> List[ConanProfile]:
             try:
                 # Use ProfileAPI's get_path method instead of manual path combination
                 profile_path = conan_api.profiles.get_path(profile_name)
-                
+
                 profiles.append(ConanProfile(
-                    name=profile_name, 
+                    name=profile_name,
                     path=profile_path
                 ))
             except Exception as e:
@@ -492,24 +503,49 @@ async def create_profile(request: ProfileCreateRequest):
             status_code=500, detail="Conan API not initialized")
 
     try:
-        # Use Conan API to create profile with auto-detection
-        profile = conan_api.profiles.get_profile(
-            [])  # Start with empty profile
-
-        if request.detect:
-            # Auto-detect settings for the profile
-            from conan.internal.api.detect import detect_api
-            detected_settings = detect_api(conan_api)
-            profile.settings.update(detected_settings)
-
-        # Save the profile
-        profiles_path = conan_api.config.home() + "/profiles"
+        # Get profiles directory path
+        profiles_path = os.path.join(conan_api.config.home(), "profiles")
         os.makedirs(profiles_path, exist_ok=True)
         profile_file_path = os.path.join(profiles_path, request.name)
 
+        # Create profile content
+        profile_content = []
+
+        if request.detect and not request.settings:
+            # Auto-detect settings for the profile
+            try:
+                from conan.internal.api.detect import detect_api
+                detected_settings = detect_api(conan_api)
+                
+                # Convert detected settings to profile format
+                profile_content.append("[settings]")
+                for key, value in detected_settings.items():
+                    if value is not None:
+                        profile_content.append(f"{key}={value}")
+            except Exception as e:
+                print(f"Error auto-detecting settings: {e}")
+                # Fall back to basic profile creation
+                profile_content.append("[settings]")
+        else:
+            # Use provided settings
+            profile_content.append("[settings]")
+            for key, value in request.settings.items():
+                if value is not None:
+                    profile_content.append(f"{key}={value}")
+
+        # Add empty sections for completeness
+        profile_content.extend([
+            "",
+            "[options]",
+            "",
+            "[tool_requires]",
+            "",
+            "[conf]"
+        ])
+
         # Write profile to file
         with open(profile_file_path, 'w') as f:
-            f.write(str(profile))
+            f.write('\n'.join(profile_content))
 
         return {"message": f"Profile '{request.name}' created successfully", "path": profile_file_path}
     except Exception as e:
@@ -681,6 +717,44 @@ async def upload_local_package(request: UploadLocalRequest):
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error uploading package: {str(e)}")
+
+
+@app.get("/settings")
+async def get_settings() -> ConanSettings:
+    """Get available Conan settings from settings.yml."""
+    if not conan_api:
+        raise HTTPException(
+            status_code=500, detail="Conan API not initialized")
+
+    try:
+        # Get Conan home folder
+        home_folder = conan_api.config.home()
+
+        # Load settings using load_settings_yml
+        settings_obj = load_settings_yml(home_folder)
+
+        # Get the settings path for the response
+        from conan.internal.cache.home_paths import HomePaths
+        home_paths = HomePaths(home_folder)
+        settings_path = home_paths.settings_path
+
+        # Extract settings structure from the loaded Settings object
+        possible_values = settings_obj.possible_values()
+
+        # Convert to ConanSettings format
+        conan_settings = ConanSettings(
+            path=settings_path,
+            os=possible_values.get("os", {}),
+            arch=list(possible_values.get("arch", [])),
+            compiler=possible_values.get("compiler", {}),
+            build_type=list(possible_values.get("build_type", []))
+        )
+
+        return conan_settings
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error loading settings: {str(e)}")
 
 
 async def check_package_availability(package_ref: str, host_profile: str, build_profile: str, remote_name: Optional[str] = None) -> PackageAvailability:
@@ -864,6 +938,7 @@ if __name__ == "__main__":
 
     # Output the port information for the extension to read
     print(f"CONAN_SERVER_PORT:{actual_port}", flush=True)
-    print(f"Starting Conan API server on {args.host}:{actual_port}", flush=True)
+    print(
+        f"Starting Conan API server on {args.host}:{actual_port}", flush=True)
 
     uvicorn.run(app, host=args.host, port=actual_port, log_level="warning")

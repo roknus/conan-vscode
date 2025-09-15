@@ -76,6 +76,10 @@ export class ConanApiClient {
         return this.makeRequest('/remotes');
     }
 
+    async getSettings(): Promise<any> {
+        return this.makeRequest('/settings');
+    }
+
     async installPackages(workspacePath: string, buildMissing: boolean = true, hostProfile: string, buildProfile: string): Promise<any> {
         return this.makeRequest('/install', 'POST', {
             workspace_path: workspacePath,
@@ -95,10 +99,11 @@ export class ConanApiClient {
         });
     }
 
-    async createProfile(name: string): Promise<any> {
+    async createProfile(name: string, settings?: { [key: string]: string | null }): Promise<any> {
         return this.makeRequest('/profiles/create', 'POST', {
             name: name,
-            detect: true
+            detect: !settings, // Only auto-detect if no settings provided
+            settings: settings || {}
         });
     }
 
