@@ -175,13 +175,34 @@ async def health_check():
     }
 
 
+def find_conanfile() -> str:
+    """
+    Find conanfile in current working directory.
+    
+    Returns:
+        Path to the found conanfile (conanfile.txt or conanfile.py)
+        
+    Raises:
+        HTTPException: If no conanfile is found
+    """
+    conanfile_txt = "conanfile.txt"
+    conanfile_py = "conanfile.py"
+    
+    if os.path.exists(conanfile_txt):
+        return os.path.abspath(conanfile_txt)
+    elif os.path.exists(conanfile_py):
+        return os.path.abspath(conanfile_py)
+    else:
+        raise HTTPException(
+            status_code=404, detail="No conanfile found in current directory")
+
+
 @app.get("/packages")
-async def get_packages(workspace_path: str, host_profile: str, build_profile: str, remote: Optional[str] = None) -> List[ConanPackage]:
+async def get_packages(host_profile: str, build_profile: str, remote: Optional[str] = None) -> List[ConanPackage]:
     """
     Get packages from conanfile in current workspace.
 
     Args:
-        workspace_path: Path to the workspace containing conanfile (required)
         host_profile: Host profile name (required)
         build_profile: Build profile name (required) 
         remote: Specific remote to check. If None, checks all configured remotes (optional)
@@ -189,27 +210,20 @@ async def get_packages(workspace_path: str, host_profile: str, build_profile: st
     Returns:
         List of packages with their availability status across local cache and remote(s)
     """
-    if not os.path.exists(workspace_path):
-        raise HTTPException(
-            status_code=400, detail="Workspace path does not exist")
-    conanfile_txt = os.path.join(workspace_path, "conanfile.txt")
-    conanfile_py = os.path.join(workspace_path, "conanfile.py")
-
-    packages = []
-
     try:
-        if os.path.exists(conanfile_txt):
-            packages = await parse_conanfile_txt(conanfile_txt, host_profile, build_profile, remote)
-        elif os.path.exists(conanfile_py):
-            packages = await parse_conanfile_py(conanfile_py, host_profile, build_profile, remote)
-        else:
-            raise HTTPException(
-                status_code=404, detail="No conanfile found in workspace")
+        conanfile_path = find_conanfile()
+        
+        if conanfile_path == "conanfile.txt":
+            packages = await parse_conanfile_txt(conanfile_path, host_profile, build_profile, remote)
+        else:  # conanfile.py
+            packages = await parse_conanfile_py(conanfile_path, host_profile, build_profile, remote)
+            
+        return packages
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions from find_conanfile
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error parsing conanfile: {str(e)}")
-
-    return packages
 
 
 async def parse_conanfile_txt(file_path: str, host_profile: str, build_profile: str, remote_name: Optional[str] = None) -> List[ConanPackage]:
@@ -322,7 +336,7 @@ async def get_profiles() -> List[ConanProfile]:
     if not conan_api:
         raise HTTPException(
             status_code=500, detail="Conan API not initialized")
-
+    
     try:
         # Use Conan ProfileAPI to list profiles
         profile_names = conan_api.profiles.list()
@@ -372,23 +386,14 @@ async def get_remotes() -> List[ConanRemote]:
 
 
 @app.post("/install")
-async def install_packages(workspace_path: str, request: InstallRequest):
+async def install_packages(request: InstallRequest):
     """Install packages from conanfile."""
-    if not os.path.exists(workspace_path):
-        raise HTTPException(
-            status_code=400, detail="Workspace path does not exist")
-
     if not conan_api:
         raise HTTPException(
             status_code=500, detail="Conan API not initialized")
 
     try:
-        conanfile_path = os.path.join(workspace_path, "conanfile.txt")
-        if not os.path.exists(conanfile_path):
-            conanfile_path = os.path.join(workspace_path, "conanfile.py")
-            if not os.path.exists(conanfile_path):
-                raise HTTPException(
-                    status_code=404, detail="No conanfile found in workspace")
+        conanfile_path = find_conanfile()
 
         # Get profiles
         profile_host = conan_api.profiles.get_profile(
@@ -430,6 +435,8 @@ async def install_packages(workspace_path: str, request: InstallRequest):
             "message": f"Package installation completed with profiles: host={request.host_profile}, build={request.build_profile}",
             "status": "completed"
         }
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions from find_conanfile
     except ConanException as e:
         raise HTTPException(
             status_code=500, detail=f"Conan API error: {str(e)}")
@@ -577,31 +584,28 @@ async def add_remote(request: RemoteAddRequest):
 
 
 @app.post("/upload/missing")
-async def upload_missing_packages(workspace_path: str, request: UploadRequest):
+async def upload_missing_packages(request: UploadRequest):
     """Upload missing packages to remote (synchronous)."""
-    if not os.path.exists(workspace_path):
-        raise HTTPException(
-            status_code=400, detail="Workspace path does not exist")
-
     if not conan_api:
         raise HTTPException(
             status_code=500, detail="Conan API not initialized")
 
     try:
         # Execute upload synchronously
-        result = await upload_packages_task(workspace_path, request)
+        result = await upload_packages_task(request)
         return {"message": "Package upload completed", "status": "completed", "result": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
 
-async def upload_packages_task(workspace_path: str, request: UploadRequest):
+async def upload_packages_task(request: UploadRequest):
     """Background task to upload packages."""
     try:
-        conanfile_path = os.path.join(workspace_path, "conanfile.py")
-
-        if not os.path.exists(conanfile_path):
-            raise Exception("No conanfile.py found, cannot upload packages")
+        conanfile_path = find_conanfile()
+        
+        # Only support conanfile.py for uploads
+        if conanfile_path != "conanfile.py":
+            raise Exception("Only conanfile.py is supported for uploads, conanfile.txt found")
 
         # Load conanfile and get dependencies
         module, _ = load_python_file(conanfile_path)
@@ -836,6 +840,8 @@ async def check_package_availability(package_ref: str, host_profile: str, build_
 
         if not target_node:
             return PackageAvailability()
+        
+        print(target_node.conanfile.info.invalid)
 
         # Extract what Conan tells us
         recipe_status = str(

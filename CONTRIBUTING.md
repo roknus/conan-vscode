@@ -110,7 +110,7 @@ To test with an external Python backend server:
 
 1. **Start the Python server separately**:
    ```bash
-   python conan_server.py --host 127.0.0.1 --port 8000
+   python conan_server.py --host 127.0.0.1 --port 8000 --cwd /path/to/workspace
    ```
 
 2. **Launch extension with external backend**:
