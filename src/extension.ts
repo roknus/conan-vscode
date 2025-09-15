@@ -388,66 +388,54 @@ async function createProfile(conanStore: ConanStore, apiClient: ConanApiClient):
         // Prompt user for each setting
         const profileSettings: { [key: string]: string | null } = {};
 
-        const parse = async function (object: Object, path: string[]) {
-            for (const [key, val] of Object.entries(object)) {
+        // Helper function to show QuickPick with skip option
+        const showSettingQuickPick = async (settingKey: string, options: string[]): Promise<string | null | undefined> => {
+            const settingOptions: SettingQuickPickItem[] = options.map(val => ({
+                label: val ? val : 'None',  // Handle null values
+                value: val
+            }));
 
-                if (val instanceof Object) {
-                    await parse(val, path.concat(key));
-                }
+            // Add skip option at the beginning
+            settingOptions.unshift({
+                label: 'Skip',
+                description: 'Let Conan decide the value automatically',
+                value: undefined  // Use undefined to indicate skip
+            });
 
+            const selected = await vscode.window.showQuickPick(settingOptions, {
+                placeHolder: `Select ${settingKey}`,
+                canPickMany: false
+            });
+
+            return selected?.value;
+        };
+
+        // Recursive function to parse nested settings
+        const parseNestedSettings = async (settingsObject: any, currentPath: string[]): Promise<void> => {
+            for (const [key, val] of Object.entries(settingsObject)) {
                 if (val instanceof Array) {
-                    const compilerSettingOptions: SettingQuickPickItem[] = val.map(val => {
-                        return {
-                            label: val ? val : 'None',  // Handle null values
-                            value: val
-                        };
-                    });
-
-                    const selectedCompilerSetting = await vscode.window.showQuickPick(compilerSettingOptions, {
-                        placeHolder: `Select ${key}`,
-                        canPickMany: false
-                    });
-                    if (selectedCompilerSetting && selectedCompilerSetting.value) {
-                        profileSettings[`${path.join('.')}.${key}`] = selectedCompilerSetting.value;
+                    const selectedValue = await showSettingQuickPick(key, val);
+                    if (selectedValue !== undefined) {
+                        profileSettings[`${currentPath.join('.')}.${key}`] = selectedValue;
                     }
+                } else if (val instanceof Object) {
+                    await parseNestedSettings(val, currentPath.concat(key));
                 }
             }
         };
 
+        // Process top-level settings
         for (const [key, val] of Object.entries(settings)) {
             if (val instanceof Array) {
-                const settingOptions: SettingQuickPickItem[] = val.map(val => {
-                    return {
-                        label: val ? val : 'None',  // Handle null values
-                        value: val
-                    };
-                });
-
-                const selectedSetting = await vscode.window.showQuickPick(settingOptions, {
-                    placeHolder: `Select ${key}`,
-                    canPickMany: false
-                });
-
-                if (selectedSetting && selectedSetting.value) {
-                    profileSettings[key] = selectedSetting.value;
+                const selectedValue = await showSettingQuickPick(key, val);
+                if (selectedValue !== undefined) {
+                    profileSettings[key] = selectedValue;
                 }
-            }
-            else if (val instanceof Object) {
-                const baseOptions: SettingQuickPickItem[] = Object.keys(val).map(val => {
-                    return {
-                        label: val,
-                        value: val
-                    };
-                });
-
-                const baseSetting = await vscode.window.showQuickPick(baseOptions, {
-                    placeHolder: `Select ${key}`,
-                    canPickMany: false
-                });
-
-                if (baseSetting && baseSetting.value) {
-                    profileSettings[key] = baseSetting.value;
-                    await parse(settings[key][baseSetting.value], [key]);
+            } else if (val instanceof Object) {
+                const selectedKey = await showSettingQuickPick(key, Object.keys(val));
+                if (selectedKey !== undefined && selectedKey !== null) {
+                    profileSettings[key] = selectedKey;
+                    await parseNestedSettings(settings[key][selectedKey], [key]);
                 }
             }
         }
