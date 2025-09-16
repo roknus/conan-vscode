@@ -78,20 +78,21 @@ app.add_middleware(
 
 class ConanSettings(BaseModel):
     """Conan settings structure."""
-    path: str                       # Path to settings file in home folder
+    path: str                           # Path to settings file in home folder
 
-    os: Dict[str, dict] = {}        # e.g., {"Windows": {}, "Linux": {}}
-    arch: List[str] = []            # e.g., ["x86_64", "armv8"]
-    # e.g., {"gcc": {"versions": ["9", "10"]}, "clang": {"versions": ["11", "12"]}}
+    os: Dict[str, dict] = {}            # e.g., {"Windows": {}, "Linux": {}}
+    arch: List[str] = []                # e.g., ["x86_64", "armv8"]
+
+    # e.g., {"gcc": {"version": ["9", "10"], "libcxx": ["libstdc++11"]}, "clang": {...}}
     compiler: Dict[str, dict] = {}
-    build_type: List[str | None] = []      # e.g., ["Debug", "Release"]
+    build_type: List[str | None] = []   # e.g., ["Debug", "Release"]
 
 
 class PackageAvailability(BaseModel):
     """Package availability information based on what Conan's analyze_binaries tells us."""
 
-    # Simple derived flags for UI logic
-    is_incompatible: bool = False  # True if package is incompatible with current profile
+    is_incompatible: bool = False
+    incompatible_reason: Optional[str] = None
 
     # Local availability
     local_status: str = "none"
@@ -178,16 +179,16 @@ async def health_check():
 def find_conanfile() -> str:
     """
     Find conanfile in current working directory.
-    
+
     Returns:
         Path to the found conanfile (conanfile.txt or conanfile.py)
-        
+
     Raises:
         HTTPException: If no conanfile is found
     """
     conanfile_txt = "conanfile.txt"
     conanfile_py = "conanfile.py"
-    
+
     if os.path.exists(conanfile_txt):
         return os.path.abspath(conanfile_txt)
     elif os.path.exists(conanfile_py):
@@ -212,12 +213,12 @@ async def get_packages(host_profile: str, build_profile: str, remote: Optional[s
     """
     try:
         conanfile_path = find_conanfile()
-        
+
         if conanfile_path == "conanfile.txt":
             packages = await parse_conanfile_txt(conanfile_path, host_profile, build_profile, remote)
         else:  # conanfile.py
             packages = await parse_conanfile_py(conanfile_path, host_profile, build_profile, remote)
-            
+
         return packages
     except HTTPException:
         raise  # Re-raise HTTP exceptions from find_conanfile
@@ -336,7 +337,7 @@ async def get_profiles() -> List[ConanProfile]:
     if not conan_api:
         raise HTTPException(
             status_code=500, detail="Conan API not initialized")
-    
+
     try:
         # Use Conan ProfileAPI to list profiles
         profile_names = conan_api.profiles.list()
@@ -523,7 +524,7 @@ async def create_profile(request: ProfileCreateRequest):
             try:
                 from conan.internal.api.detect import detect_api
                 detected_settings = detect_api(conan_api)
-                
+
                 # Convert detected settings to profile format
                 profile_content.append("[settings]")
                 for key, value in detected_settings.items():
@@ -602,10 +603,11 @@ async def upload_packages_task(request: UploadRequest):
     """Background task to upload packages."""
     try:
         conanfile_path = find_conanfile()
-        
+
         # Only support conanfile.py for uploads
         if conanfile_path != "conanfile.py":
-            raise Exception("Only conanfile.py is supported for uploads, conanfile.txt found")
+            raise Exception(
+                "Only conanfile.py is supported for uploads, conanfile.txt found")
 
         # Load conanfile and get dependencies
         module, _ = load_python_file(conanfile_path)
@@ -840,8 +842,6 @@ async def check_package_availability(package_ref: str, host_profile: str, build_
 
         if not target_node:
             return PackageAvailability()
-        
-        print(target_node.conanfile.info.invalid)
 
         # Extract what Conan tells us
         recipe_status = str(
@@ -860,6 +860,7 @@ async def check_package_availability(package_ref: str, host_profile: str, build_
                 local_status = "recipe+binary"
 
         is_incompatible = binary_status == BINARY_INVALID
+        incompatible_reason = target_node.conanfile.info.invalid if is_incompatible else None
 
         # Enhanced remote checking: if package is in local cache, also check remote availability
         remote_recipe_available = False
@@ -913,6 +914,7 @@ async def check_package_availability(package_ref: str, host_profile: str, build_
 
         return PackageAvailability(
             is_incompatible=is_incompatible,
+            incompatible_reason=incompatible_reason,
             local_status=local_status,
             remote_status=remote_status
         )
