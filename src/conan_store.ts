@@ -10,6 +10,7 @@ export type PackageStatus = 'none' | 'recipe' | 'recipe+binary';
 // TypeScript interfaces for API responses
 export interface PackageAvailability {
     is_incompatible: boolean;
+    incompatible_reason?: string;
     local_status: PackageStatus;
     remote_status: PackageStatus;
 }

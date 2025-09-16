@@ -24,7 +24,36 @@ export class ConanPackageItem extends vscode.TreeItem {
         // Create detailed tooltip for packages with availability information
         if (itemType.startsWith('package') && packageInfo && packageInfo.availability) {
             const avail = packageInfo.availability;
-            let tooltip = `${this.label}\n\n`;
+
+            let header = this.label;
+            switch (itemType) {
+                case 'package-available':
+                    header += ' (available)';
+                    break;
+                case 'package-uploadable':
+                    header += ' (available for upload)';
+                    break;
+                case 'package-downloadable':
+                    header += ' (available for download)';
+                    break;
+                case 'package-buildable':
+                    header += ' (buildable from recipe)';
+                    break;
+                case 'package-incompatible':
+                    header += ' (incompatible with current profile)';
+                    break;
+                case 'package-unknown':
+                    header += ' (status unknown)';
+                    break;
+                case 'package-installing':
+                    header += ' (installing...)';
+                    break;
+                case 'package-uploading':
+                    header += ' (uploading...)';
+                    break;
+            }
+
+            let tooltip = `${header}\n\n`;
 
             // Local availability
             tooltip += `📁 Local:\n`;
@@ -38,7 +67,7 @@ export class ConanPackageItem extends vscode.TreeItem {
 
             // Only show incompatible warning if it's actually incompatible
             if (avail.is_incompatible) {
-                tooltip += `⚠️ Package is incompatible with current profile\n`;
+                tooltip += `\n⚠️ Package is incompatible with current profile\nReason: ${avail.incompatible_reason || 'Unknown reason'}\n`;
             }
 
             this.tooltip = tooltip;
@@ -52,35 +81,27 @@ export class ConanPackageItem extends vscode.TreeItem {
         switch (itemType) {
             case 'package-available':
                 this.iconPath = new vscode.ThemeIcon('layers-active');
-                this.tooltip += ' (available)';
                 break;
             case 'package-uploadable':
                 this.iconPath = new vscode.ThemeIcon('layers-dot');
-                this.tooltip += ' (available for upload)';
                 break;
             case 'package-downloadable':
                 this.iconPath = new vscode.ThemeIcon('cloud-download');
-                this.tooltip += ' (available for download)';
                 break;
             case 'package-buildable':
                 this.iconPath = new vscode.ThemeIcon('tools');
-                this.tooltip += ' (buildable from recipe)';
                 break;
             case 'package-incompatible':
                 this.iconPath = new vscode.ThemeIcon('error');
-                this.tooltip += ' (incompatible with current profile)';
                 break;
             case 'package-unknown':
                 this.iconPath = new vscode.ThemeIcon('question');
-                this.tooltip += ' (status unknown)';
                 break;
             case 'package-installing':
                 this.iconPath = new vscode.ThemeIcon('loading~spin');
-                this.tooltip += ' (installing...)';
                 break;
             case 'package-uploading':
                 this.iconPath = new vscode.ThemeIcon('loading~spin');
-                this.tooltip += ' (uploading...)';
                 break;
         }
     }
