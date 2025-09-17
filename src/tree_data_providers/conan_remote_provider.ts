@@ -52,11 +52,11 @@ export class ConanRemoteProvider implements vscode.TreeDataProvider<ConanRemoteI
             case 'running':
                 try {
                     const remotes = this.conanStore.getRemotes();
-                    if (!remotes || remotes.length === 0) {
-                        const item = new vscode.TreeItem('Conan API Server failed to start', vscode.TreeItemCollapsibleState.None);
-                        item.iconPath = new vscode.ThemeIcon('error');
-                        item.contextValue = 'error';
-                        item.tooltip = 'Conan API Server failed to start';
+                    if (!remotes) {
+                        const item = new vscode.TreeItem('Loading remotes...', vscode.TreeItemCollapsibleState.None);
+                        item.iconPath = new vscode.ThemeIcon('info');
+                        item.contextValue = 'info';
+                        item.tooltip = 'Loading remotes...';
                         item.description = '';
                         return [item];
                     }
