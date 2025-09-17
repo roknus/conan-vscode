@@ -255,21 +255,45 @@
       "title": "Conan Package Manager",
       "properties": {
         "conan.activeHostProfile": {
-          "type": "string",
-          "default": "default",
+          "type": "object",
           "description": "Active Conan host profile for package operations",
+          "properties": {
+            "displayName": {
+              "type": "string",
+              "description": "Display name of the profile"
+            },
+            "path": {
+              "type": "string",
+              "description": "File system path to the profile"
+            }
+          },
           "scope": "resource"
         },
         "conan.activeBuildProfile": {
-          "type": "string",
-          "default": "default",
+          "type": "object",
           "description": "Active Conan build profile for package operations",
+          "properties": {
+            "displayName": {
+              "type": "string",
+              "description": "Display name of the profile"
+            },
+            "path": {
+              "type": "string",
+              "description": "File system path to the profile"
+            }
+          },
           "scope": "resource"
         },
         "conan.activeRemote": {
           "type": "string",
           "default": "all",
           "description": "Active Conan remote for package operations",
+          "scope": "resource"
+        },
+        "conan.localProfilesPath": {
+          "type": "string",
+          "default": ".conan2/profiles",
+          "description": "Path to local Conan profiles directory relative to workspace root",
           "scope": "resource"
         }
       }

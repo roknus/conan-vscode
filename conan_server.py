@@ -109,6 +109,7 @@ class ConanPackage(BaseModel):
 class ConanProfile(BaseModel):
     name: str
     path: str
+    isLocal: bool = False
 
 
 class ConanRemote(BaseModel):
@@ -150,6 +151,7 @@ class ProfileCreateRequest(BaseModel):
     name: str
     detect: bool = True
     settings: Dict[str, str] = {}
+    profiles_path: Optional[str] = None  # Path to local profiles directory
 
 
 class RemoteAddRequest(BaseModel):
@@ -332,29 +334,47 @@ async def parse_conanfile_py(file_path: str, host_profile: str, build_profile: s
 
 
 @app.get("/profiles")
-async def get_profiles() -> List[ConanProfile]:
+async def get_profiles(local_profiles_path: Optional[str] = None) -> List[ConanProfile]:
     """Get available Conan profiles."""
     if not conan_api:
         raise HTTPException(
             status_code=500, detail="Conan API not initialized")
 
     try:
-        # Use Conan ProfileAPI to list profiles
-        profile_names = conan_api.profiles.list()
         profiles = []
-
+        
+        # Get global profiles from Conan
+        profile_names = conan_api.profiles.list()
         for profile_name in profile_names:
             try:
-                # Use ProfileAPI's get_path method instead of manual path combination
                 profile_path = conan_api.profiles.get_path(profile_name)
-
                 profiles.append(ConanProfile(
                     name=profile_name,
-                    path=profile_path
+                    path=profile_path,
+                    isLocal=False
                 ))
             except Exception as e:
-                print(f"Error processing profile {profile_name}: {e}")
+                print(f"Error processing global profile {profile_name}: {e}")
                 continue
+
+        # Get local profiles if path is specified
+        if local_profiles_path:
+            try:
+                # Convert relative path to absolute
+                if not os.path.isabs(local_profiles_path):
+                    local_profiles_path = os.path.abspath(local_profiles_path)
+                
+                if os.path.exists(local_profiles_path) and os.path.isdir(local_profiles_path):
+                    for filename in os.listdir(local_profiles_path):
+                        filepath = os.path.join(local_profiles_path, filename)
+                        if os.path.isfile(filepath) and not filename.startswith('.'):
+                            profiles.append(ConanProfile(
+                                name=filename,
+                                path=filepath,
+                                isLocal=True
+                            ))
+            except Exception as e:
+                print(f"Error scanning local profiles directory: {e}")
 
         return profiles
     except Exception as e:
@@ -511,8 +531,17 @@ async def create_profile(request: ProfileCreateRequest):
             status_code=500, detail="Conan API not initialized")
 
     try:
-        # Get profiles directory path
-        profiles_path = os.path.join(conan_api.config.home(), "profiles")
+        # Determine the profiles directory path
+        if request.profiles_path:
+            # Use local profiles path
+            if not os.path.isabs(request.profiles_path):
+                profiles_path = os.path.abspath(request.profiles_path)
+            else:
+                profiles_path = request.profiles_path
+        else:
+            # Use global profiles path
+            profiles_path = os.path.join(conan_api.config.home(), "profiles")
+        
         os.makedirs(profiles_path, exist_ok=True)
         profile_file_path = os.path.join(profiles_path, request.name)
 

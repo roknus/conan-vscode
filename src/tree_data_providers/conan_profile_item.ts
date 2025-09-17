@@ -9,7 +9,10 @@ export class ConanProfileItem extends vscode.TreeItem {
         
         this.contextValue = 'profile';
         this.iconPath = new vscode.ThemeIcon('person');
-        this.tooltip = `Profile: ${profile.name}\nPath: ${profile.path}`;
+        
+        const profileType = profile.isLocal ? 'Local' : 'Global';
+        this.tooltip = `${profileType} Profile: ${profile.name}\nPath: ${profile.path}`;
+        this.description = profile.isLocal ? '(local)' : '';
         this.resourceUri = vscode.Uri.file(profile.path);
     }
 }
