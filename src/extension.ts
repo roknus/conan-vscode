@@ -220,8 +220,8 @@ async function refreshPackages(conanStore: ConanStore, apiClient: ConanApiClient
         conanStore.clearPackageCache();
         const packages = await apiClient.getPackages(
             conanStore.workspaceRoot,
-            conanStore.activeHostProfile.name,
-            conanStore.activeBuildProfile.name,
+            conanStore.activeHostProfile.path,
+            conanStore.activeBuildProfile.path,
             conanStore.activeRemote === 'all' ? undefined : conanStore.activeRemote.name);
         conanStore.setPackages(packages);
     } catch (error) {
@@ -232,7 +232,17 @@ async function refreshPackages(conanStore: ConanStore, apiClient: ConanApiClient
 async function refreshProfiles(conanStore: ConanStore, apiClient: ConanApiClient): Promise<void> {
     try {
         conanStore.clearProfileCache();
-        const profiles = await apiClient.getProfiles();
+
+        // Get local profiles path from configuration
+        const config = vscode.workspace.getConfiguration('conan');
+        const localProfilesPath = config.get<string>('localProfilesPath', '.conan2/profiles');
+
+        // Make path absolute relative to workspace root
+        const workspaceRoot = conanStore.workspaceRoot;
+        const absoluteLocalProfilesPath = localProfilesPath.startsWith('.') ?
+            `${workspaceRoot}/${localProfilesPath}` : localProfilesPath;
+
+        const profiles = await apiClient.getProfiles(absoluteLocalProfilesPath);
         conanStore.setProfiles(profiles);
     } catch (error) {
         vscode.window.showErrorMessage(`Failed to refresh profiles: ${error}`);
@@ -280,8 +290,8 @@ async function installAllPackages(conanStore: ConanStore, apiClient: ConanApiCli
         await apiClient.installPackages(
             conanStore.workspaceRoot,
             true,
-            conanStore.activeHostProfile.name,
-            conanStore.activeBuildProfile.name
+            conanStore.activeHostProfile.path,
+            conanStore.activeBuildProfile.path
         );
         logger.info(`✅ Package installation started successfully with profiles: host=${conanStore.activeHostProfile}, build=${conanStore.activeBuildProfile}`);
         vscode.window.showInformationMessage(`Package installation started via API server with profiles: host=${conanStore.activeHostProfile}, build=${conanStore.activeBuildProfile}`);
@@ -350,8 +360,8 @@ async function installSinglePackage(conanStore: ConanStore, apiClient: ConanApiC
         await apiClient.installPackage(
             packageRef,
             options.value.buildMissing,
-            conanStore.activeHostProfile.name,
-            conanStore.activeBuildProfile.name,
+            conanStore.activeHostProfile.path,
+            conanStore.activeBuildProfile.path,
             options.value.force
         );
         vscode.window.showInformationMessage(`Installation of ${packageRef} started via API server with profiles: host=${conanStore.activeHostProfile}, build=${conanStore.activeBuildProfile}`);
@@ -372,6 +382,18 @@ async function createProfile(conanStore: ConanStore, apiClient: ConanApiClient):
         return;
     }
 
+    // First ask for profile type
+    const profileType = await vscode.window.showQuickPick([
+        { label: 'Global Profile', description: 'Available to all Conan projects', value: 'global' },
+        { label: 'Local Profile', description: 'Only available to this workspace', value: 'local' }
+    ], {
+        placeHolder: 'Select profile type'
+    });
+
+    if (!profileType) {
+        return;
+    }
+
     const profileName = await vscode.window.showInputBox({
         prompt: 'Enter profile name',
         placeHolder: 'e.g., default, debug, release'
@@ -379,6 +401,13 @@ async function createProfile(conanStore: ConanStore, apiClient: ConanApiClient):
 
     if (!profileName) {
         return;
+    }
+
+    // Get local profiles path if creating a local profile
+    let profilePath: string | undefined;
+    if (profileType.value === 'local') {
+        const config = vscode.workspace.getConfiguration('conan');
+        profilePath = config.get<string>('localProfilesPath', '.conan2/profiles');
     }
 
     try {
@@ -441,8 +470,9 @@ async function createProfile(conanStore: ConanStore, apiClient: ConanApiClient):
         }
 
         // Create profile with collected settings
-        await apiClient.createProfile(profileName, profileSettings);
-        vscode.window.showInformationMessage(`Profile '${profileName}' created successfully`);
+        await apiClient.createProfile(profileName, profileSettings, profilePath);
+        const profileTypeText = profileType.value;
+        vscode.window.showInformationMessage(`${profileTypeText.charAt(0).toUpperCase() + profileTypeText.slice(1)} profile '${profileName}' created successfully`);
 
         // Clear profiles cache to force refresh
         conanStore.setProfiles([]);
@@ -529,8 +559,8 @@ async function uploadMissingPackages(conanStore: ConanStore, apiClient: ConanApi
             await apiClient.uploadMissingPackages(
                 conanStore.workspaceRoot,
                 selectedRemote.label,
-                conanStore.activeHostProfile.name,
-                conanStore.activeBuildProfile.name
+                conanStore.activeHostProfile.path,
+                conanStore.activeBuildProfile.path
             );
             vscode.window.showInformationMessage('Package upload started. Check the output panel for progress.');
 
@@ -613,7 +643,7 @@ async function uploadLocalPackage(conanStore: ConanStore, apiClient: ConanApiCli
                 const result = await apiClient.uploadLocalPackage(
                     item.packageInfo.ref,
                     selectedRemote.label,
-                    conanStore.activeHostProfile.name,
+                    conanStore.activeHostProfile.path,
                     false // force = false
                 );
 

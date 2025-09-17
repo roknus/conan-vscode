@@ -68,8 +68,12 @@ export class ConanApiClient {
         return this.makeRequest(url);
     }
 
-    async getProfiles(): Promise<Profile[]> {
-        return this.makeRequest('/profiles');
+    async getProfiles(localProfilesPath?: string): Promise<Profile[]> {
+        let url = '/profiles';
+        if (localProfilesPath) {
+            url += `?local_profiles_path=${encodeURIComponent(localProfilesPath)}`;
+        }
+        return this.makeRequest(url);
     }
 
     async getRemotes(): Promise<Remote[]> {
@@ -99,11 +103,12 @@ export class ConanApiClient {
         });
     }
 
-    async createProfile(name: string, settings?: { [key: string]: string | null }): Promise<any> {
+    async createProfile(name: string, settings?: { [key: string]: string | null }, localProfilesPath?: string): Promise<any> {
         return this.makeRequest('/profiles/create', 'POST', {
             name: name,
             detect: !settings, // Only auto-detect if no settings provided
-            settings: settings || {}
+            settings: settings || {},
+            profiles_path: localProfilesPath
         });
     }
 

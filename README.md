@@ -29,8 +29,9 @@ A comprehensive Visual Studio Code extension for managing Conan C++ packages, pr
 
 ### 👤 Profile Management
 - **Host & Build Profiles**: Support for both host and build profile management
-- **Create Profiles**: Easy profile creation with auto-detection
-- **View Profiles**: List all available Conan profiles via API or CLI
+- **Local & Global Profiles**: Separate management of workspace-specific (local) and system-wide (global) profiles
+- **Create Profiles**: Easy profile creation with auto-detection and local/global choice
+- **View Profiles**: Hierarchical tree view showing Global and Local profile sections
 - **Profile Selection**: Quick profile switching via status bar
 - **Refresh**: Update profile list on demand
 
@@ -125,6 +126,34 @@ The extension provides a convenient status bar item showing the currently active
 
 **Keyboard Shortcut**: Use `Ctrl+Shift+P` → `Conan: Select Active Remote` to change remotes
 
+### Local vs Global Profiles
+The extension supports both local (workspace-specific) and global (system-wide) Conan profiles:
+
+#### Local Profiles
+- **Workspace-specific**: Stored in your project directory (default: `.conan2/profiles`)
+- **Version control**: Can be committed to your repository to share with team members
+- **Project settings**: Configured via workspace setting `conan.localProfilesPath`
+
+#### Global Profiles
+- **System-wide**: Stored in your Conan cache folder (`~/.conan2/profiles`)
+- **Machine-specific**: Typically not shared between developers
+- **Standard Conan**: Works exactly like regular Conan profiles
+
+#### Creating Profiles
+When creating a new profile, you'll be prompted to choose:
+1. **Global Profile**: Available to all Conan projects on your system
+2. **Local Profile**: Only available to the current workspace
+
+#### Configuration
+Configure the local profiles directory in your workspace settings:
+```json
+{
+    "conan.localProfilesPath": ".conan2/profiles"
+}
+```
+
+The path can be absolute or relative to the workspace root.
+
 ### Package Binary Status Indicators
 The extension shows visual indicators for package binary availability:
 
@@ -149,6 +178,7 @@ The extension provides workspace-specific configuration options:
 - `conan.activeHostProfile` - Active Conan host profile for package operations
 - `conan.activeBuildProfile` - Active Conan build profile for package operations
 - `conan.activeRemote` - Active Conan remote for package operations (default: "all")
+- `conan.localProfilesPath` - Path to local Conan profiles directory relative to workspace root (default: ".conan2/profiles")
 
 ## 📖 Example Usage
 

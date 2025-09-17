@@ -24,6 +24,7 @@ export interface PackageInfo {
 export interface Profile {
     name: string;
     path: string;
+    isLocal?: boolean; // Whether this is a local profile (workspace-specific) vs global
 }
 
 export interface Remote {
