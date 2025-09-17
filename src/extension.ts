@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { ConanStore, Remote, TaskType } from './conan_store';
+import { ConanStore, Profile, TaskType } from './conan_store';
 import { ConanServerManager } from './conan_server_manager';
 import { ConanApiClient } from './conan_api_client';
 import { ConanPackageItem } from './tree_data_providers/conan_package_item';
@@ -29,6 +29,14 @@ let remoteStatusBarItem: vscode.StatusBarItem;
 export interface SettingQuickPickItem extends vscode.QuickPickItem {
     // Store the actual value to use when setting the profile
     value?: string;
+}
+
+/**
+ * QuickPickItem that stores the actual profile alongside display information
+ */
+export interface ProfileQuickPickItem extends vscode.QuickPickItem {
+    // Store the actual profile object
+    profile?: Profile;
 }
 
 
@@ -126,19 +134,32 @@ async function selectProfile(conanStore: ConanStore, profileType: ProfileType): 
 
         const currentProfile = profileType === 'host' ? conanStore.activeHostProfile : conanStore.activeBuildProfile;
 
-        // Show quick pick with current profile highlighted
-        const quickPickItems = profiles.map(profile => ({
-            label: profile.name,
-            description: profile === currentProfile ? '$(check) Current' : '',
-            profile: profile
-        }));
+        const quickPickItems: ProfileQuickPickItem[] = [];
+        const globalProfiles = profiles.filter(profile => !profile.isLocal);
+        if (globalProfiles.length > 0) {
+            quickPickItems.push({ label: 'Global Profiles', kind: vscode.QuickPickItemKind.Separator });
+            quickPickItems.push(...globalProfiles.map(profile => ({
+                label: profile.name,
+                description: profile === currentProfile ? '$(check) Current' : '',
+                profile: profile
+            })));
+        }
+        const localProfiles = profiles.filter(profile => profile.isLocal);
+        if (localProfiles.length > 0) {
+            quickPickItems.push({ label: 'Local Profiles', kind: vscode.QuickPickItemKind.Separator });
+            quickPickItems.push(...localProfiles.map(profile => ({
+                label: profile.name,
+                description: profile === currentProfile ? '$(check) Current' : '',
+                profile: profile
+            })));
+        }
 
         const selected = await vscode.window.showQuickPick(quickPickItems, {
             placeHolder: `Select active Conan ${profileType} profile`,
             matchOnDescription: true
         });
 
-        if (selected && selected.profile !== currentProfile) {
+        if (selected && selected.profile && selected.profile !== currentProfile) {
             if (profileType === 'host') {
                 conanStore.activeHostProfile = selected.profile;
                 updateHostProfileStatusBar(conanStore);
@@ -147,7 +168,7 @@ async function selectProfile(conanStore: ConanStore, profileType: ProfileType): 
                 updateBuildProfileStatusBar(conanStore);
             }
 
-            vscode.window.showInformationMessage(`Active Conan ${profileType} profile set to: ${selected.profile}`);
+            vscode.window.showInformationMessage(`Active Conan ${profileType} profile set to: ${selected.profile.name}`);
 
             // Save configuration
             await conanStore.saveConfiguration();
