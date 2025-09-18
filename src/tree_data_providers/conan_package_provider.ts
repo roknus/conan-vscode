@@ -66,7 +66,7 @@ export class ConanPackageProvider implements vscode.TreeDataProvider<ConanPackag
                         const loadingType = this.conanStore.getPackageLoadingType(pkg.ref);
                         const itemType = loadingType || this.getItemTypeFromPackage(pkg);
 
-                        return new ConanPackageItem(pkg.name, vscode.TreeItemCollapsibleState.None, itemType, pkg);
+                        return new ConanPackageItem(`${pkg.name}/${pkg.version}`, vscode.TreeItemCollapsibleState.None, itemType, pkg);
                     });
                 } catch (error) {
                     this.logger.warn('Package API request failed:', error);
