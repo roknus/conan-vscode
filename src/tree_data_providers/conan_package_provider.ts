@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import { ConanStore, PackageInfo } from '../conan_store';
-import { ConanPackageItem, PackageItemType } from './conan_package_item';
+import { ConanStore, PackageInfo, PackageItemType } from '../conan_store';
+import { ConanPackageItem } from './conan_package_item';
 import { getLogger } from '../logger';
 
 export class ConanPackageProvider implements vscode.TreeDataProvider<ConanPackageItem | vscode.TreeItem> {

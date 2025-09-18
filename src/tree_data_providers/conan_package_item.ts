@@ -1,16 +1,5 @@
 import * as vscode from 'vscode';
-import { PackageInfo } from '../conan_store';
-
-// Valid item types for package tree items only
-export type PackageItemType =
-    | 'package-available'
-    | 'package-downloadable'
-    | 'package-uploadable'
-    | 'package-buildable'
-    | 'package-incompatible'
-    | 'package-unknown'
-    | 'package-installing'
-    | 'package-uploading';
+import { PackageInfo, PackageItemType } from '../conan_store';
 
 export class ConanPackageItem extends vscode.TreeItem {
     constructor(

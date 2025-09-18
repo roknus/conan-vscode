@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { ConanStore, Profile, TaskType } from './conan_store';
+import { ConanStore, Profile, TaskType, ProfileType } from './conan_store';
 import { ConanServerManager } from './conan_server_manager';
 import { ConanApiClient } from './conan_api_client';
 import { ConanPackageItem } from './tree_data_providers/conan_package_item';
@@ -14,14 +14,12 @@ import { initializeLogger } from './logger';
 // Global logger instance
 let logger: vscode.LogOutputChannel;
 
-type ProfileType = 'host' | 'build';
-
-// Global state for active profiles
-let hostProfileStatusBarItem: vscode.StatusBarItem;
-let buildProfileStatusBarItem: vscode.StatusBarItem;
-
 // Global state for active remote
 let remoteStatusBarItem: vscode.StatusBarItem;
+
+// Global state for profile file watchers
+let hostProfileWatcher: vscode.FileSystemWatcher | undefined;
+let buildProfileWatcher: vscode.FileSystemWatcher | undefined;
 
 /**
  * QuickPickItem that stores the actual setting value alongside display information
@@ -39,47 +37,40 @@ export interface ProfileQuickPickItem extends vscode.QuickPickItem {
     profile?: Profile;
 }
 
-
 // Profile status bar management
 // Host Profile status bar management
-function createHostProfileStatusBarItem(): vscode.StatusBarItem {
-    hostProfileStatusBarItem = vscode.window.createStatusBarItem('conan.hostProfile', vscode.StatusBarAlignment.Left, 42);
-    hostProfileStatusBarItem.name = 'Conan Host Profile';
-    hostProfileStatusBarItem.command = 'conan.selectHostProfile';
-    hostProfileStatusBarItem.tooltip = 'Click to select active Conan host profile';
-    hostProfileStatusBarItem.show();
-    return hostProfileStatusBarItem;
-}
-
-function updateHostProfileStatusBar(conanStore: ConanStore) {
-    if (hostProfileStatusBarItem) {
-        let profile = 'None';
-        if (conanStore.activeHostProfile) {
-            profile = conanStore.activeHostProfile.name;
-        }
-        hostProfileStatusBarItem.text = `$(person) Host: ${profile}`;
-        hostProfileStatusBarItem.tooltip = `Active Conan Host Profile: ${profile} (click to change)`;
+function createProfileStatusBarItem(type: ProfileType): vscode.StatusBarItem {
+    if (type === 'host') {
+        const hostProfileStatusBarItem = vscode.window.createStatusBarItem('conan.hostProfile', vscode.StatusBarAlignment.Left, 42);
+        hostProfileStatusBarItem.name = 'Conan Host Profile';
+        hostProfileStatusBarItem.command = 'conan.selectHostProfile';
+        hostProfileStatusBarItem.tooltip = 'Click to select active Conan host profile';
+        hostProfileStatusBarItem.show();
+        return hostProfileStatusBarItem;
+    } else {
+        const buildProfileStatusBarItem = vscode.window.createStatusBarItem('conan.buildProfile', vscode.StatusBarAlignment.Left, 41);
+        buildProfileStatusBarItem.name = 'Conan Build Profile';
+        buildProfileStatusBarItem.command = 'conan.selectBuildProfile';
+        buildProfileStatusBarItem.tooltip = 'Click to select active Conan build profile';
+        buildProfileStatusBarItem.show();
+        return buildProfileStatusBarItem;
     }
 }
 
-// Build Profile status bar management  
-function createBuildProfileStatusBarItem(): vscode.StatusBarItem {
-    buildProfileStatusBarItem = vscode.window.createStatusBarItem('conan.buildProfile', vscode.StatusBarAlignment.Left, 41);
-    buildProfileStatusBarItem.name = 'Conan Build Profile';
-    buildProfileStatusBarItem.command = 'conan.selectBuildProfile';
-    buildProfileStatusBarItem.tooltip = 'Click to select active Conan build profile';
-    buildProfileStatusBarItem.show();
-    return buildProfileStatusBarItem;
-}
-
-function updateBuildProfileStatusBar(conanStore: ConanStore) {
-    if (buildProfileStatusBarItem) {
-        let profile = 'None';
-        if (conanStore.activeBuildProfile) {
-            profile = conanStore.activeBuildProfile.name;
+function updateProfileStatusBar(statusBarItem: vscode.StatusBarItem, profileType: ProfileType, profile: Profile | null) {
+    if (statusBarItem) {
+        let profileName = 'None';
+        if (profile) {
+            profileName = profile.name;
         }
-        buildProfileStatusBarItem.text = `$(tools) Build: ${profile}`;
-        buildProfileStatusBarItem.tooltip = `Active Conan Build Profile: ${profile} (click to change)`;
+        if (profileType === 'host') {
+            statusBarItem.text = `$(person) Host: ${profileName}`;
+            statusBarItem.tooltip = `Active Conan Host Profile: ${profileName} (click to change)`;
+        }
+        else if (profileType === 'build') {
+            statusBarItem.text = `$(tools) Build: ${profileName}`;
+            statusBarItem.tooltip = `Active Conan Build Profile: ${profileName} (click to change)`;
+        }
     }
 }
 
@@ -162,10 +153,8 @@ async function selectProfile(conanStore: ConanStore, profileType: ProfileType): 
         if (selected && selected.profile && selected.profile !== currentProfile) {
             if (profileType === 'host') {
                 conanStore.activeHostProfile = selected.profile;
-                updateHostProfileStatusBar(conanStore);
             } else {
                 conanStore.activeBuildProfile = selected.profile;
-                updateBuildProfileStatusBar(conanStore);
             }
 
             vscode.window.showInformationMessage(`Active Conan ${profileType} profile set to: ${selected.profile.name}`);
@@ -733,6 +722,62 @@ async function openProfileFile(item?: ConanPackageItem | ConanProfileItem): Prom
     }
 }
 
+/**
+ * Create or update file watcher for host profile
+ */
+function updateHostProfileWatcher(conanStore: ConanStore, apiClient: ConanApiClient) {
+    // Dispose existing watcher
+    if (hostProfileWatcher) {
+        hostProfileWatcher.dispose();
+        hostProfileWatcher = undefined;
+    }
+
+    if (conanStore.activeHostProfile && conanStore.activeHostProfile.path) {
+        const profileUri = vscode.Uri.file(conanStore.activeHostProfile.path);
+        hostProfileWatcher = vscode.workspace.createFileSystemWatcher(profileUri.fsPath);
+
+        hostProfileWatcher.onDidChange(() => {
+            logger.info(`Host profile file changed: ${conanStore.activeHostProfile?.path}`);
+            refreshPackages(conanStore, apiClient);
+        });
+
+        hostProfileWatcher.onDidDelete(() => {
+            logger.warn(`Host profile file deleted: ${conanStore.activeHostProfile?.path}`);
+            conanStore.activeHostProfile = null;
+            conanStore.saveConfiguration();
+            vscode.window.showWarningMessage(`Host profile file was deleted. Active host profile reset to None.`);
+        });
+    }
+}
+
+/**
+ * Create or update file watcher for build profile
+ */
+function updateBuildProfileWatcher(conanStore: ConanStore, apiClient: ConanApiClient) {
+    // Dispose existing watcher
+    if (buildProfileWatcher) {
+        buildProfileWatcher.dispose();
+        buildProfileWatcher = undefined;
+    }
+
+    if (conanStore.activeBuildProfile && conanStore.activeBuildProfile.path) {
+        const profileUri = vscode.Uri.file(conanStore.activeBuildProfile.path);
+        buildProfileWatcher = vscode.workspace.createFileSystemWatcher(profileUri.fsPath);
+
+        buildProfileWatcher.onDidChange(() => {
+            logger.info(`Build profile file changed: ${conanStore.activeBuildProfile?.path}`);
+            refreshPackages(conanStore, apiClient);
+        });
+
+        buildProfileWatcher.onDidDelete(() => {
+            logger.warn(`Build profile file deleted: ${conanStore.activeBuildProfile?.path}`);
+            conanStore.activeBuildProfile = null;
+            conanStore.saveConfiguration();
+            vscode.window.showWarningMessage(`Build profile file was deleted. Active build profile reset to None.`);
+        });
+    }
+}
+
 export function activate(context: vscode.ExtensionContext) {
     // Initialize logger first
     logger = vscode.window.createOutputChannel('Conan Package Manager', { log: true });
@@ -775,14 +820,36 @@ export function activate(context: vscode.ExtensionContext) {
             // Load saved configuration into store
             conanStore.initializeFromConfig();
 
-            const hostProfile = conanStore.activeHostProfile ? conanStore.activeHostProfile.name : 'None';
-            const buildProfile = conanStore.activeBuildProfile ? conanStore.activeBuildProfile.name : 'None';
-            const remote = conanStore.activeRemote === 'all' ? 'All ' : conanStore.activeRemote.name;
-            logger.info(`Final profiles after loading: Host=${hostProfile}, Build=${buildProfile}, Remote=${remote}`);
-
             // Initialize server manager and API client
             const serverManager = new ConanServerManager(conanStore, backendUrl);
             const apiClient = new ConanApiClient(serverManager);
+
+            const hostProfile = conanStore.activeHostProfile ? conanStore.activeHostProfile.name : 'None';
+            const buildProfile = conanStore.activeBuildProfile ? conanStore.activeBuildProfile.name : 'None';
+
+            // Initialize status bars
+            const hostProfileStatusBar = createProfileStatusBarItem('host');
+            context.subscriptions.push(hostProfileStatusBar);
+            const buildProfileStatusBar = createProfileStatusBarItem('build');
+            context.subscriptions.push(buildProfileStatusBar);
+
+            // Listen for profile changes to update status bars and refresh packages
+            conanStore.onActiveProfileChange((profileType) => {
+                if (profileType === 'host') {
+                    updateProfileStatusBar(hostProfileStatusBar, 'host', conanStore.activeHostProfile);
+                    updateHostProfileWatcher(conanStore, apiClient);
+                } else if (profileType === 'build') {
+                    updateProfileStatusBar(buildProfileStatusBar, 'build', conanStore.activeBuildProfile);
+                    updateBuildProfileWatcher(conanStore, apiClient);
+                }
+                refreshPackages(conanStore, apiClient);
+            });
+
+            // Initial status bar update and file watchers
+            updateProfileStatusBar(hostProfileStatusBar, 'host', conanStore.activeHostProfile);
+            updateHostProfileWatcher(conanStore, apiClient);
+            updateProfileStatusBar(buildProfileStatusBar, 'build', conanStore.activeBuildProfile);
+            updateBuildProfileWatcher(conanStore, apiClient);
 
             let serverConnected: Promise<boolean>;
             // Connect to external server or start our own
@@ -812,6 +879,15 @@ export function activate(context: vscode.ExtensionContext) {
             vscode.window.registerTreeDataProvider('conan.packages', packageProvider);
             vscode.window.registerTreeDataProvider('conan.profiles', profileProvider);
             vscode.window.registerTreeDataProvider('conan.remotes', remoteProvider);
+
+
+            const remote = conanStore.activeRemote === 'all' ? 'All ' : conanStore.activeRemote.name;
+            const remoteStatusBar = createRemoteStatusBarItem();
+            context.subscriptions.push(remoteStatusBar);
+
+            updateRemoteStatusBar(conanStore);
+
+            logger.info(`Final profiles after loading: Host=${hostProfile}, Build=${buildProfile}, Remote=${remote}`);
 
             // Register commands
             context.subscriptions.push(
@@ -875,21 +951,6 @@ export function activate(context: vscode.ExtensionContext) {
                     openProfileFile(item);
                 })
             );
-
-            // Initialize status bars
-            const hostProfileStatusBar = createHostProfileStatusBarItem();
-            context.subscriptions.push(hostProfileStatusBar);
-
-            const buildProfileStatusBar = createBuildProfileStatusBarItem();
-            context.subscriptions.push(buildProfileStatusBar);
-
-            const remoteStatusBar = createRemoteStatusBarItem();
-            context.subscriptions.push(remoteStatusBar);
-
-            // Update status bars with loaded values from store
-            updateHostProfileStatusBar(conanStore);
-            updateBuildProfileStatusBar(conanStore);
-            updateRemoteStatusBar(conanStore);
 
             // Show welcome message
             vscode.window.showInformationMessage('Conan Package Manager extension activated! 🎉');
