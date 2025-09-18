@@ -27,6 +27,7 @@ export interface PackageAvailability {
 
 export interface PackageInfo {
     name: string;
+    version: string;
     ref: string;
     availability: PackageAvailability;
 }
