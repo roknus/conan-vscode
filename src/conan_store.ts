@@ -1,11 +1,21 @@
 import * as vscode from 'vscode';
 import { getLogger } from './logger';
-import { PackageItemType } from './tree_data_providers/conan_package_item';
 
 // Server state enumeration
 export type ServerState = 'starting' | 'running' | 'stopped' | 'error';
 
 export type PackageStatus = 'none' | 'recipe' | 'recipe+binary';
+
+// Valid item types for package tree items only
+export type PackageItemType =
+    | 'package-available'
+    | 'package-downloadable'
+    | 'package-uploadable'
+    | 'package-buildable'
+    | 'package-incompatible'
+    | 'package-unknown'
+    | 'package-installing'
+    | 'package-uploading';
 
 // TypeScript interfaces for API responses
 export interface PackageAvailability {
@@ -20,6 +30,8 @@ export interface PackageInfo {
     ref: string;
     availability: PackageAvailability;
 }
+
+export type ProfileType = 'host' | 'build';
 
 export interface Profile {
     name: string;
@@ -58,6 +70,7 @@ export class ConanStore {
     private cachedProfiles: Profile[] | undefined = undefined;
     private cachedRemotes: Remote[] | undefined = undefined;
     private stateChangeCallbacks: (() => void)[] = [];
+    private activeProfileChangeCallbacks: ((profileType: ProfileType) => void)[] = [];
     private serverStateChangeCallbacks: ((state: ServerState) => void)[] = [];
 
     // Task management
@@ -96,11 +109,11 @@ export class ConanStore {
                 if (profileType === 'host' && this._activeHostProfile !== profile) {
                     this._activeHostProfile = profile;
                     this.dispatch({ type: 'SET_PACKAGES', payload: undefined });
-                    this.notifyDataChange();
+                    this.notifyActiveProfileChange('host');
                 } else if (profileType === 'build' && this._activeBuildProfile !== profile) {
                     this._activeBuildProfile = profile;
                     this.dispatch({ type: 'SET_PACKAGES', payload: undefined });
-                    this.notifyDataChange();
+                    this.notifyActiveProfileChange('build');
                 }
                 break;
 
@@ -257,6 +270,27 @@ export class ConanStore {
                 callback();
             } catch (error) {
                 this.logger.error('Error in data change callback:', error);
+            }
+        });
+    }
+
+    onActiveProfileChange(callback: (profileType: ProfileType) => void): void {
+        this.activeProfileChangeCallbacks.push(callback);
+    }
+    
+    removeActiveProfileChangeCallback(callback: (profileType: ProfileType) => void): void {
+        const index = this.activeProfileChangeCallbacks.indexOf(callback);
+        if (index > -1) {
+            this.activeProfileChangeCallbacks.splice(index, 1);
+        }
+    }
+
+    private notifyActiveProfileChange(profileType: ProfileType): void {
+        this.activeProfileChangeCallbacks.forEach(callback => {
+            try {
+                callback(profileType);
+            } catch (error) {
+                this.logger.error('Error in profile change callback:', error);
             }
         });
     }
