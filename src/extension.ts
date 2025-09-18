@@ -413,6 +413,27 @@ async function createProfile(conanStore: ConanStore, apiClient: ConanApiClient):
         return;
     }
 
+    // Check if profile already exists using cached profiles
+    const existingProfiles = conanStore.getProfiles();
+    if (existingProfiles) {
+        const isLocal = profileType.value === 'local';
+        const existingProfile = existingProfiles.find(p =>
+            p.name === profileName && p.isLocal === isLocal
+        );
+
+        if (existingProfile) {
+            const overwrite = await vscode.window.showWarningMessage(
+                `Profile '${profileName}' already exists. Do you want to overwrite it?`,
+                'Overwrite',
+                'Cancel'
+            );
+
+            if (overwrite !== 'Overwrite') {
+                return;
+            }
+        }
+    }
+
     // Get local profiles path if creating a local profile
     let profilePath: string | undefined;
     if (profileType.value === 'local') {
