@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { ConanStore, PackageInfo, PackageItemType } from '../conan_store';
+import { ConanStore, PackageInfo, PackageItemType, TaskType } from '../conan_store';
 import { ConanPackageItem } from './conan_package_item';
 import { getLogger } from '../logger';
 
@@ -29,11 +29,17 @@ export class ConanPackageProvider implements vscode.TreeDataProvider<ConanPackag
             return Promise.resolve([]);
         }
 
-        if (element) {
-            return Promise.resolve([]);
-        } else {
+        if (element && element instanceof ConanPackageItem && element.packageInfo) {
+            // Return dependencies of the selected package
+            if (element.packageInfo.dependencies && element.packageInfo.dependencies.length > 0) {
+                return element.packageInfo.dependencies.map(dep => this.createConanPackageItem(dep));
+            }
+            return [];
+        } else if (!element) {
             return this.getConanPackages();
         }
+
+        return [];
     }
 
     private async getConanPackages(): Promise<(ConanPackageItem | vscode.TreeItem)[]> {
@@ -61,13 +67,7 @@ export class ConanPackageProvider implements vscode.TreeDataProvider<ConanPackag
                         return [item];
                     }
 
-                    return packages.map(pkg => {
-                        // Check if this package is currently being processed
-                        const loadingType = this.conanStore.getPackageLoadingType(pkg.ref);
-                        const itemType = loadingType || this.getItemTypeFromPackage(pkg);
-
-                        return new ConanPackageItem(`${pkg.name}/${pkg.version}`, vscode.TreeItemCollapsibleState.None, itemType, pkg);
-                    });
+                    return packages.map(pkg => this.createConanPackageItem(pkg));
                 } catch (error) {
                     this.logger.warn('Package API request failed:', error);
 
@@ -113,7 +113,40 @@ export class ConanPackageProvider implements vscode.TreeDataProvider<ConanPackag
         }
     }
 
+    private createConanPackageItem(pkg: PackageInfo): ConanPackageItem {
+        const itemType = this.getItemTypeFromPackage(pkg);
+        const hasChildren = pkg.dependencies && pkg.dependencies.length > 0;
+
+        return new ConanPackageItem(
+            pkg,
+            hasChildren ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None,
+            itemType
+        );
+    }
+
+    private getPackageLoadingType(packageRef: string): PackageItemType | null {
+        const currentTask = this.conanStore.getCurrentTask();
+        if (!currentTask || currentTask.packageRef !== packageRef) {
+            return null;
+        }
+
+        switch (currentTask.type) {
+            case TaskType.INSTALL_PACKAGE:
+                return 'package-installing';
+            case TaskType.UPLOAD_PACKAGE:
+                return 'package-uploading';
+            default:
+                return 'package-installing'; // Default fallback
+        }
+    }
+
     private getItemTypeFromPackage(pkg: PackageInfo): PackageItemType {
+        // Check if this package is currently being processed
+        const loadingType = this.getPackageLoadingType(pkg.ref);
+        if (loadingType) {
+            return loadingType;
+        }
+
         const availability = pkg.availability;
 
         if (availability.is_incompatible) {

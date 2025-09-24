@@ -30,6 +30,7 @@ export interface PackageInfo {
     version: string;
     ref: string;
     availability: PackageAvailability;
+    dependencies?: PackageInfo[];
 }
 
 export type ProfileType = 'host' | 'build';
@@ -370,21 +371,6 @@ export class ConanStore {
 
     isTaskRunning(): boolean {
         return this.currentTask !== null;
-    }
-
-    getPackageLoadingType(packageRef: string): PackageItemType | null {
-        if (!this.currentTask || this.currentTask.packageRef !== packageRef) {
-            return null;
-        }
-
-        switch (this.currentTask.type) {
-            case TaskType.INSTALL_PACKAGE:
-                return 'package-installing';
-            case TaskType.UPLOAD_PACKAGE:
-                return 'package-uploading';
-            default:
-                return 'package-installing'; // Default fallback
-        }
     }
 
     onTaskStateChange(callback: (task: RunningTask | null) => void): void {
