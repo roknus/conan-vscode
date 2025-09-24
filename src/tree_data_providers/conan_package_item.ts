@@ -1,14 +1,22 @@
 import * as vscode from 'vscode';
 import { PackageInfo, PackageItemType } from '../conan_store';
 
+function get_ref(pkg: PackageInfo): string {
+    return `${pkg.name}/${pkg.version}`;
+}
+
 export class ConanPackageItem extends vscode.TreeItem {
+
+    get ref(): string {
+        return get_ref(this.packageInfo);
+    }
+
     constructor(
-        public readonly label: string,
+        public readonly packageInfo: PackageInfo,
         public readonly collapsibleState: vscode.TreeItemCollapsibleState,
-        public readonly itemType: PackageItemType,
-        public readonly packageInfo?: PackageInfo
+        public readonly itemType: PackageItemType
     ) {
-        super(label, collapsibleState);
+        super(get_ref(packageInfo), collapsibleState);
 
         // Create detailed tooltip for packages with availability information
         if (itemType.startsWith('package') && packageInfo && packageInfo.availability) {
@@ -61,7 +69,7 @@ export class ConanPackageItem extends vscode.TreeItem {
 
             this.tooltip = tooltip;
         } else {
-            this.tooltip = this.label;
+            this.tooltip = this.ref;
         }
 
         // Set context value for menu contributions

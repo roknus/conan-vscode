@@ -24,9 +24,10 @@ except ImportError:
 try:
     from conan.api.conan_api import ConanAPI
     from conan.errors import ConanException
-    from conan.api.model import ListPattern, RecipeReference, PkgReference
+    from conan.api.model import ListPattern, RecipeReference, PkgReference, Remote
     from conan.internal.loader import load_python_file
     from conan.internal.graph.profile_node_definer import initialize_conanfile_profile
+    from conan.internal.graph.graph import Node
     from conan.internal.graph.graph import CONTEXT_BUILD
     from conan.internal.graph.graph import BINARY_BUILD, BINARY_CACHE, BINARY_DOWNLOAD, BINARY_INVALID
     from conan.internal.graph.graph import RECIPE_DOWNLOADED, RECIPE_INCACHE, RECIPE_UPDATED
@@ -104,6 +105,8 @@ class ConanPackage(BaseModel):
     version: str
     ref: str
     availability: PackageAvailability
+    # Add support for nested dependencies
+    dependencies: List['ConanPackage'] = []
 
 
 class ConanProfile(BaseModel):
@@ -207,7 +210,7 @@ async def get_packages(host_profile: str, build_profile: str, remote: Optional[s
 
     Args:
         host_profile: Host profile name (required)
-        build_profile: Build profile name (required) 
+        build_profile: Build profile name (required)
         remote: Specific remote to check. If None, checks all configured remotes (optional)
 
     Returns:
@@ -216,10 +219,7 @@ async def get_packages(host_profile: str, build_profile: str, remote: Optional[s
     try:
         conanfile_path = find_conanfile()
 
-        if conanfile_path == "conanfile.txt":
-            packages = await parse_conanfile_txt(conanfile_path, host_profile, build_profile, remote)
-        else:  # conanfile.py
-            packages = await parse_conanfile_py(conanfile_path, host_profile, build_profile, remote)
+        packages = await parse_conanfile(conanfile_path, host_profile, build_profile, remote)
 
         return packages
     except HTTPException:
@@ -229,108 +229,195 @@ async def get_packages(host_profile: str, build_profile: str, remote: Optional[s
             status_code=500, detail=f"Error parsing conanfile: {str(e)}")
 
 
-async def parse_conanfile_txt(file_path: str, host_profile: str, build_profile: str, remote_name: Optional[str] = None) -> List[ConanPackage]:
-    """Parse conanfile.txt and extract packages with optional remote filtering."""
-    packages = []
+def create_package_from_node(node: Node, remotes: List[Remote]) -> ConanPackage:
 
-    with open(file_path, 'r') as f:
-        content = f.read()
+    # Extract what Conan tells us
+    recipe_status = str(
+        node.recipe) if node.recipe else "unknown"
+    binary_status = str(
+        node.binary) if node.binary else "unknown"
 
-    lines = content.split('\n')
-    in_requires = False
+    # Determine simple flags for UI
+    local_recipe_available = recipe_status == RECIPE_INCACHE
+    local_binary_available = binary_status == BINARY_CACHE
 
-    for line in lines:
-        line = line.strip()
-        if line == '[requires]':
-            in_requires = True
-            continue
-        if line.startswith('[') and line != '[requires]':
-            in_requires = False
-            continue
-        if in_requires and line and not line.startswith('#'):
-            try:
-                parts = line.split('/')
-                if len(parts) >= 2:
-                    name = parts[0]
-                    version = parts[1]
+    local_status = "none"
+    if local_recipe_available:
+        local_status = "recipe"
+        if local_binary_available:
+            local_status = "recipe+binary"
 
-                    # Get comprehensive package availability
-                    availability = await check_package_availability(line, host_profile, build_profile, remote_name)
+    is_incompatible = binary_status == BINARY_INVALID
+    incompatible_reason = node.conanfile.info.invalid if is_incompatible else None
 
-                    packages.append(ConanPackage(
-                        name=name,
-                        version=version,
-                        ref=line,
-                        availability=availability
-                    ))
-            except:
-                continue
+    # Enhanced remote checking: if package is in local cache, also check remote availability
+    remote_recipe_available = False
+    remote_binary_available = False
 
-    return packages
-
-
-async def parse_conanfile_py(file_path: str, host_profile: str, build_profile: str, remote_name: Optional[str] = None) -> List[ConanPackage]:
-    """Parse conanfile.py and extract packages with optional remote filtering."""
-    packages = []
+    remote_status = 'none'
 
     try:
-        # Load the Python module
-        module, _ = load_python_file(file_path)
+        # Check each configured remote
+        for remote in remotes:
+            # Check if package exists for this recipe reference
+            try:
+                recipe_ref: RecipeReference = RecipeReference(
+                    node.ref.name,
+                    node.ref.version,
+                    node.ref.user,
+                    node.ref.channel
+                )
 
-        # Find the ConanFile class defined in the module
-        conanfile_class = None
-        for attr in dir(module):
-            obj = getattr(module, attr)
-            if isinstance(obj, type) and issubclass(obj, module.ConanFile) and obj.__name__ != "ConanFile":
-                conanfile_class = obj
-                break
+                recipe_revisions = conan_api.list.recipe_revisions(
+                    recipe_ref, remote)
+                if recipe_revisions:
+                    remote_recipe_available = True
+            except Exception as e:
+                print(
+                    f"Error checking remote availability for recipe {recipe_ref}: {e}")
+                pass  # Binary not found on this remote, try next
 
-        if conanfile_class:
-            # Instantiate the conanfile
-            conanfile = conanfile_class()
+            # Check if binary exists for this package ID
+            try:
+                package_ref: PkgReference = PkgReference(
+                    node.ref, node.package_id)
+                package_revisions = conan_api.list.package_revisions(
+                    package_ref, remote)
+                if package_revisions:
+                    remote_binary_available = True
+            except Exception as e:
+                print(
+                    f"Error checking remote availability for package {package_ref}: {e}")
+                pass  # Binary not found on this remote, try next
 
-            # Load the specified profiles
-            profile_host = conan_api.profiles.get_profile(
-                [host_profile], {}, {}, {}, None)
-            profile_build = conan_api.profiles.get_profile(
-                [build_profile], {}, {}, {}, None)
+            if remote_recipe_available:
+                remote_status = "recipe"
+                if remote_binary_available:
+                    remote_status = "recipe+binary"
 
-            # Initialize the conanfile with profile (this is crucial for dynamic requirements)
-            initialize_conanfile_profile(conanfile, profile_build=profile_build,
-                                         profile_host=profile_host, base_context=CONTEXT_BUILD, is_build_require=False)
-
-            # Call requirements() method to populate dynamic requirements
-            if hasattr(conanfile, 'requirements'):
-                conanfile.requirements()
-
-            # Now process the populated requires
-            if hasattr(conanfile, 'requires'):
-                for r in conanfile.requires.values():
-                    try:
-                        req_str = str(r.ref)
-                        parts = req_str.split('/')
-                        if len(parts) >= 2:
-                            name = parts[0]
-                            version = parts[1]
-
-                            # Get comprehensive package availability
-                            availability = await check_package_availability(req_str, host_profile, build_profile, remote_name)
-
-                            packages.append(ConanPackage(
-                                name=name,
-                                version=version,
-                                ref=req_str,
-                                availability=availability
-                            ))
-                    except Exception as e:
-                        print(f"Error processing requirement {r}: {e}")
-                        continue
     except Exception as e:
-        print(f"Error parsing conanfile.py: {e}")
+        print(
+            f"Error checking remote availability for {node.ref}: {e}")
+
+    dependencies: List[ConanPackage] = []
+    for edge in node.edges:
+        package = create_package_from_node(edge.dst, remotes)
+        dependencies.append(package)
+
+    availability = PackageAvailability(
+        is_incompatible=is_incompatible,
+        incompatible_reason=incompatible_reason,
+        local_status=local_status,
+        remote_status=remote_status
+    )
+
+    package = ConanPackage(
+        name=node.ref.name,
+        version=str(node.ref.version),
+        ref=str(node.ref),
+        dependencies=dependencies,
+        availability=availability
+    )
+
+    return package
+
+async def parse_conanfile(file_path: str, host_profile: str, build_profile: str, remote_name: Optional[str] = None) -> List[ConanPackage]:
+    """Parse conanfile.py and extract packages with optional remote filtering."""
+    packages: List[ConanPackage] = []
+
+    try:
+        # Load the specified profiles
+        profile_host = conan_api.profiles.get_profile(
+            [host_profile], {}, {}, {}, None)
+        profile_build = conan_api.profiles.get_profile(
+            [build_profile], {}, {}, {}, None)
+
+        # Set up remotes to check
+        remotes: List[Remote] = []
+        if not remote_name:
+            remotes = conan_api.remotes.list()
+        else:
+            try:
+                specific_remote = conan_api.remotes.get(remote_name)
+                remotes.append(specific_remote)
+                # Always include conancenter as fallback unless it's already the specified remote
+                if remote_name != "conancenter":
+                    try:
+                        conancenter = conan_api.remotes.get('conancenter')
+                        remotes.append(conancenter)
+                    except:
+                        pass  # conancenter might not be configured
+            except Exception as e:
+                print(f"Failed to get remote {remote_name}: {e}")
+                return PackageAvailability(
+                    recipe_status="error",
+                    binary_status="error"
+                )
+
+        # Remove the remotes that are not authenticated
+        for remote in remotes[:]:  # Copy the list to avoid modification during iteration
+            if not is_authenticated(conan_api, remote):
+                print(f"Not authenticated to remote {remote.name}")
+                remotes.remove(remote)
+                
+        root_node = conan_api.graph.load_graph_consumer(
+            file_path, None, None, None, None, profile_host, profile_build, None, remotes=remotes, update=None
+        )
+
+        for dep, edge in root_node.root.transitive_deps.items():
+
+            try:
+                # Create a dependency graph for this specific package requirement
+                deps_graph = conan_api.graph.load_graph_requires(
+                    requires=[dep.ref],
+                    tool_requires=None,
+                    profile_host=profile_host,
+                    profile_build=profile_build,
+                    lockfile=None,
+                    remotes=remotes,
+                    update=["*"]
+                )
+
+                if deps_graph.error:
+                    availability = PackageAvailability(
+                        is_incompatible=True,
+                        incompatible_reason=str(deps_graph.error),
+                        local_status="none",
+                        remote_status="none"
+                    )
+
+                    package = ConanPackage(
+                        name=dep.ref.name,
+                        version=str(dep.ref.version),
+                        ref=str(dep.ref),
+                        availability=availability
+                    )
+                    packages.append(package)
+
+                # Analyze binaries to see what's available
+                conan_api.graph.analyze_binaries(
+                    deps_graph,
+                    # Don't build anything, just analyze what exists
+                    build_mode=['never'],
+                    remotes=remotes,
+                    update=None,
+                    lockfile=None,
+                    build_modes_test=None,
+                    tested_graph=None
+                )
+
+                for edge in deps_graph.root.edges:
+                    package = create_package_from_node(edge.dst, remotes)
+                    packages.append(package)
+
+            except Exception as e:
+                print(f"Error analyzing package {dep.ref}: {e}")
+
+        return packages
+    except Exception as e:
+        print(f"Error parsing conanfile: {e}")
         raise HTTPException(
             status_code=500, detail=f"Error parsing conanfile.py: {str(e)}")
-
-    return packages
 
 
 @app.get("/profiles")
@@ -342,7 +429,7 @@ async def get_profiles(local_profiles_path: Optional[str] = None) -> List[ConanP
 
     try:
         profiles = []
-        
+
         # Get global profiles from Conan
         profile_names = conan_api.profiles.list()
         for profile_name in profile_names:
@@ -363,7 +450,7 @@ async def get_profiles(local_profiles_path: Optional[str] = None) -> List[ConanP
                 # Convert relative path to absolute
                 if not os.path.isabs(local_profiles_path):
                     local_profiles_path = os.path.abspath(local_profiles_path)
-                
+
                 if os.path.exists(local_profiles_path) and os.path.isdir(local_profiles_path):
                     for filename in os.listdir(local_profiles_path):
                         filepath = os.path.join(local_profiles_path, filename)
@@ -541,7 +628,7 @@ async def create_profile(request: ProfileCreateRequest):
         else:
             # Use global profiles path
             profiles_path = os.path.join(conan_api.config.home(), "profiles")
-        
+
         os.makedirs(profiles_path, exist_ok=True)
         profile_file_path = os.path.join(profiles_path, request.name)
 
@@ -790,169 +877,6 @@ async def get_settings() -> ConanSettings:
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error loading settings: {str(e)}")
-
-
-async def check_package_availability(package_ref: str, host_profile: str, build_profile: str, remote_name: Optional[str] = None) -> PackageAvailability:
-    """
-    Check package availability using Conan's graph analysis.
-    Returns what Conan actually tells us through analyze_binaries.
-    """
-    try:
-        if not conan_api:
-            return PackageAvailability(
-                recipe_status="error",
-                binary_status="error"
-            )
-
-        # Get profiles
-        profile_host = conan_api.profiles.get_profile(
-            [host_profile], {}, {}, {}, None)
-        profile_build = conan_api.profiles.get_profile(
-            [build_profile], {}, {}, {}, None)
-
-        # Set up remotes to check
-        remotes = []
-        if not remote_name:
-            remotes = conan_api.remotes.list()
-        else:
-            try:
-                specific_remote = conan_api.remotes.get(remote_name)
-                remotes.append(specific_remote)
-                # Always include conancenter as fallback unless it's already the specified remote
-                if remote_name != "conancenter":
-                    try:
-                        conancenter = conan_api.remotes.get('conancenter')
-                        remotes.append(conancenter)
-                    except:
-                        pass  # conancenter might not be configured
-            except Exception as e:
-                print(f"Failed to get remote {remote_name}: {e}")
-                return PackageAvailability(
-                    recipe_status="error",
-                    binary_status="error"
-                )
-
-        # Remove the remotes that are not authenticated
-        for remote in remotes[:]:  # Copy the list to avoid modification during iteration
-            if not is_authenticated(conan_api, remote):
-                print(f"Not authenticated to remote {remote.name}")
-                remotes.remove(remote)
-
-        # Create a dependency graph for this specific package requirement
-        deps_graph = conan_api.graph.load_graph_requires(
-            requires=[package_ref],
-            tool_requires=None,
-            profile_host=profile_host,
-            profile_build=profile_build,
-            lockfile=None,
-            remotes=remotes,
-            update=["*"]
-        )
-
-        # Analyze binaries to see what's available
-        conan_api.graph.analyze_binaries(
-            deps_graph,
-            # Don't build anything, just analyze what exists
-            build_mode=['never'],
-            remotes=remotes,
-            update=None,
-            lockfile=None,
-            build_modes_test=None,
-            tested_graph=None
-        )
-
-        # Find the target package node in the graph
-        target_node = None
-        for node in deps_graph.nodes:
-            # Match package name
-            if node.ref and str(node.ref).startswith(package_ref.split('/')[0]):
-                target_node = node
-                break
-
-        if not target_node:
-            return PackageAvailability()
-
-        # Extract what Conan tells us
-        recipe_status = str(
-            target_node.recipe) if target_node.recipe else "unknown"
-        binary_status = str(
-            target_node.binary) if target_node.binary else "unknown"
-
-        # Determine simple flags for UI
-        local_recipe_available = recipe_status == RECIPE_INCACHE
-        local_binary_available = binary_status == BINARY_CACHE
-
-        local_status = "none"
-        if local_recipe_available:
-            local_status = "recipe"
-            if local_binary_available:
-                local_status = "recipe+binary"
-
-        is_incompatible = binary_status == BINARY_INVALID
-        incompatible_reason = target_node.conanfile.info.invalid if is_incompatible else None
-
-        # Enhanced remote checking: if package is in local cache, also check remote availability
-        remote_recipe_available = False
-        remote_binary_available = False
-
-        remote_status = 'none'
-
-        if target_node.ref and target_node.package_id:
-            try:
-                # Check each configured remote
-                for remote in remotes:
-                    # Check if package exists for this recipe reference
-                    try:
-                        recipe_ref: RecipeReference = RecipeReference(
-                            target_node.ref.name,
-                            target_node.ref.version,
-                            target_node.ref.user,
-                            target_node.ref.channel
-                        )
-
-                        recipe_revisions = conan_api.list.recipe_revisions(
-                            recipe_ref, remote)
-                        if recipe_revisions:
-                            remote_recipe_available = True
-                    except Exception as e:
-                        print(
-                            f"Error checking remote availability for recipe {recipe_ref}: {e}")
-                        pass  # Binary not found on this remote, try next
-
-                    # Check if binary exists for this package ID
-                    try:
-                        package_ref: PkgReference = PkgReference(
-                            target_node.ref, target_node.package_id)
-                        package_revisions = conan_api.list.package_revisions(
-                            package_ref, remote)
-                        if package_revisions:
-                            remote_binary_available = True
-                    except Exception as e:
-                        print(
-                            f"Error checking remote availability for package {package_ref}: {e}")
-                        pass  # Binary not found on this remote, try next
-
-                    if remote_recipe_available:
-                        remote_status = "recipe"
-                        if remote_binary_available:
-                            remote_status = "recipe+binary"
-
-            except Exception as e:
-                print(
-                    f"Error checking remote availability for {target_node.ref}: {e}")
-
-        return PackageAvailability(
-            is_incompatible=is_incompatible,
-            incompatible_reason=incompatible_reason,
-            local_status=local_status,
-            remote_status=remote_status
-        )
-
-    except Exception as e:
-        return PackageAvailability(
-            recipe_status=f"error: {str(e)}",
-            binary_status="error"
-        )
 
 
 if __name__ == "__main__":
