@@ -20,6 +20,7 @@ class TestConan(ConanFile):
         self.requires("bullet3/3.25")
         self.requires("engine/1.0")
         self.requires("niflib/1.0")
+        self.requires("qt/6.8.3")
 
     def build_requirements(self):
         self.tool_requires("protobuf/5.29.3") # For protoc compiler

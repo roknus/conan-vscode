@@ -23,8 +23,7 @@
     "ms-python.python"
   ],
   "activationEvents": [
-    "workspaceContains:**/conanfile.txt",
-    "workspaceContains:**/conanfile.py"
+    "onStartupFinished"
   ],
   "files": [
     "dist/**",
@@ -131,16 +130,19 @@
       "conan-explorer": [
         {
           "id": "conan.packages",
+          "icon": "$(package)",
           "name": "Packages",
           "when": "workspaceHasConanfile"
         },
         {
           "id": "conan.profiles",
+          "icon": "$(person)",
           "name": "Profiles",
           "when": "workspaceHasConanfile"
         },
         {
           "id": "conan.remotes",
+          "icon": "$(globe)",
           "name": "Remotes",
           "when": "workspaceHasConanfile"
         }
@@ -151,7 +153,8 @@
         {
           "id": "conan-explorer",
           "title": "Conan",
-          "icon": "$(package)"
+          "icon": "$(package)",
+          "when": "workspaceHasConanfile"
         }
       ]
     },
@@ -294,6 +297,17 @@
           "type": "string",
           "default": ".conan2/profiles",
           "description": "Path to local Conan profiles directory relative to workspace root",
+          "scope": "resource"
+        },
+        "conan.preferredConanfileFormat": {
+          "type": "string",
+          "default": "py",
+          "enum": ["py", "txt"],
+          "enumDescriptions": [
+            "Prefer conanfile.py when both formats exist",
+            "Prefer conanfile.txt when both formats exist"
+          ],
+          "description": "Which conanfile format to use when both conanfile.py and conanfile.txt exist in the workspace",
           "scope": "resource"
         }
       }
