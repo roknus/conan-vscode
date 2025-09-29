@@ -73,6 +73,7 @@ export class ConanStore {
     private cachedRemotes: Remote[] | undefined = undefined;
     private stateChangeCallbacks: (() => void)[] = [];
     private activeProfileChangeCallbacks: ((profileType: ProfileType) => void)[] = [];
+    private activeRemoteChangeCallbacks: ((remote: Remote | AllRemotes) => void)[] = [];
     private serverStateChangeCallbacks: ((state: ServerState) => void)[] = [];
 
     // Task management
@@ -123,7 +124,7 @@ export class ConanStore {
                 if (this._activeRemote !== action.payload) {
                     this._activeRemote = action.payload;
                     this.dispatch({ type: 'SET_PACKAGES', payload: undefined });
-                    this.notifyDataChange();
+                    this.notifyActiveRemoteChange(action.payload);
                 }
                 break;
 
@@ -293,6 +294,27 @@ export class ConanStore {
                 callback(profileType);
             } catch (error) {
                 this.logger.error('Error in profile change callback:', error);
+            }
+        });
+    }
+
+    onActiveRemoteChange(callback: (remote: Remote | AllRemotes) => void): void {
+        this.activeRemoteChangeCallbacks.push(callback);
+    }
+
+    removeActiveRemoteChangeCallback(callback: (remote: Remote | AllRemotes) => void): void {
+        const index = this.activeRemoteChangeCallbacks.indexOf(callback);
+        if (index > -1) {
+            this.activeRemoteChangeCallbacks.splice(index, 1);
+        }
+    }
+
+    private notifyActiveRemoteChange(remote: Remote | AllRemotes): void {
+        this.activeRemoteChangeCallbacks.forEach(callback => {
+            try {
+                callback(remote);
+            } catch (error) {
+                this.logger.error('Error in remote change callback:', error);
             }
         });
     }

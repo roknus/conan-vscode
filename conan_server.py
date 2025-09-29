@@ -417,7 +417,7 @@ async def parse_conanfile(file_path: str, host_profile: str, build_profile: str,
     except Exception as e:
         print(f"Error parsing conanfile: {e}")
         raise HTTPException(
-            status_code=500, detail=f"Error parsing conanfile.py: {str(e)}")
+            status_code=500, detail=f"Error parsing conanfile: {str(e)}")
 
 
 @app.get("/profiles")

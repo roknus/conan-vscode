@@ -1,7 +1,5 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs';
-import * as path from 'path';
-import { ConanStore, Profile, TaskType, ProfileType } from './conan_store';
+import { ConanStore, Profile, TaskType, ProfileType, Remote, AllRemotes } from './conan_store';
 import { ConanServerManager } from './conan_server_manager';
 import { ConanApiClient } from './conan_api_client';
 import { ConanPackageItem } from './tree_data_providers/conan_package_item';
@@ -10,16 +8,23 @@ import { ConanProfileProvider } from './tree_data_providers/conan_profile_provid
 import { ConanPackageProvider } from './tree_data_providers/conan_package_provider';
 import { ConanProfileItem } from './tree_data_providers/conan_profile_item';
 import { initializeLogger } from './logger';
+import { detectConanfiles, getConanfileWatchPattern, isConanfileChange } from './conanfile_utils';
 
 // Global logger instance
 let logger: vscode.LogOutputChannel;
 
-// Global state for active remote
-let remoteStatusBarItem: vscode.StatusBarItem;
+interface StatusBarItems {
+    hostProfile: vscode.StatusBarItem;
+    buildProfile: vscode.StatusBarItem;
+    remote: vscode.StatusBarItem;
+}
 
 // Global state for profile file watchers
 let hostProfileWatcher: vscode.FileSystemWatcher | undefined;
 let buildProfileWatcher: vscode.FileSystemWatcher | undefined;
+
+// Global state for conanfile watcher
+let conanfileWatcher: vscode.FileSystemWatcher | undefined;
 
 /**
  * QuickPickItem that stores the actual setting value alongside display information
@@ -45,14 +50,12 @@ function createProfileStatusBarItem(type: ProfileType): vscode.StatusBarItem {
         hostProfileStatusBarItem.name = 'Conan Host Profile';
         hostProfileStatusBarItem.command = 'conan.selectHostProfile';
         hostProfileStatusBarItem.tooltip = 'Click to select active Conan host profile';
-        hostProfileStatusBarItem.show();
         return hostProfileStatusBarItem;
     } else {
         const buildProfileStatusBarItem = vscode.window.createStatusBarItem('conan.buildProfile', vscode.StatusBarAlignment.Left, 41);
         buildProfileStatusBarItem.name = 'Conan Build Profile';
         buildProfileStatusBarItem.command = 'conan.selectBuildProfile';
         buildProfileStatusBarItem.tooltip = 'Click to select active Conan build profile';
-        buildProfileStatusBarItem.show();
         return buildProfileStatusBarItem;
     }
 }
@@ -76,22 +79,21 @@ function updateProfileStatusBar(statusBarItem: vscode.StatusBarItem, profileType
 
 // Remote status bar management
 function createRemoteStatusBarItem(): vscode.StatusBarItem {
-    remoteStatusBarItem = vscode.window.createStatusBarItem('conan.remote', vscode.StatusBarAlignment.Left, 40);
+    const remoteStatusBarItem = vscode.window.createStatusBarItem('conan.remote', vscode.StatusBarAlignment.Left, 40);
     remoteStatusBarItem.name = 'Conan Remote';
     remoteStatusBarItem.command = 'conan.selectRemote';
     remoteStatusBarItem.tooltip = 'Click to select active Conan remote';
-    remoteStatusBarItem.show();
     return remoteStatusBarItem;
 }
 
-function updateRemoteStatusBar(conanStore: ConanStore) {
-    if (remoteStatusBarItem) {
-        let remote = 'all';
-        if (conanStore.activeRemote !== 'all') {
-            remote = conanStore.activeRemote.name;
+function updateRemoteStatusBar(statusBarItem: vscode.StatusBarItem, remote: Remote | AllRemotes) {
+    if (statusBarItem) {
+        let remoteName = 'all';
+        if (remote !== 'all') {
+            remoteName = remote.name;
         }
-        remoteStatusBarItem.text = `$(globe) ${remote}`;
-        remoteStatusBarItem.tooltip = `Active Conan Remote: ${remote} (click to change)`;
+        statusBarItem.text = `$(globe) ${remoteName}`;
+        statusBarItem.tooltip = `Active Conan Remote: ${remoteName} (click to change)`;
     }
 }
 
@@ -202,7 +204,6 @@ async function selectRemote(conanStore: ConanStore): Promise<void> {
 
         if (selected && selected.remote !== conanStore.activeRemote) {
             conanStore.activeRemote = selected.remote;
-            updateRemoteStatusBar(conanStore);
 
             vscode.window.showInformationMessage(`Active Conan remote set to: ${conanStore.activeRemote}`);
 
@@ -799,6 +800,225 @@ function updateBuildProfileWatcher(conanStore: ConanStore, apiClient: ConanApiCl
     }
 }
 
+/* 
+    * Start the extension functionality
+*/
+function start(context: vscode.ExtensionContext, workspaceRoot: string, serverManager: ConanServerManager, conanStore: ConanStore, apiClient: ConanApiClient, statusBarItems: StatusBarItems) {
+
+    // Update the context for UI visibility
+    vscode.commands.executeCommand('setContext', 'workspaceHasConanfile', true);
+    
+    // Update profile status bar visibility
+    statusBarItems.hostProfile.show();
+    statusBarItems.buildProfile.show();
+    statusBarItems.remote.show();
+
+    let serverConnected: Promise<boolean>;
+    // Connect to external server or start our own
+    if (serverManager.backendUrl) {
+        logger.info(`Using external backend URL: ${serverManager.backendUrl}`);
+        // Connect to the external server and validate it's running
+        serverConnected = serverManager.connectToServer();
+    } else {
+        // Start our own embedded server
+        serverConnected = serverManager.startServer(workspaceRoot, context.extensionPath);
+    }
+
+    serverConnected.then((connected) => {
+        if (connected && conanStore && apiClient) {
+            refreshPackages(conanStore, apiClient);
+            refreshProfiles(conanStore, apiClient);
+            refreshRemotes(conanStore, apiClient);
+        }
+    });
+}
+
+/*
+    * Stop the extension functionality
+*/
+function stop(serverManager: ConanServerManager, statusBarItems: StatusBarItems) {
+
+    // Update the context for UI visibility
+    vscode.commands.executeCommand('setContext', 'workspaceHasConanfile', false);
+
+    // Update profile status bar visibility
+    statusBarItems.hostProfile.hide();
+    statusBarItems.buildProfile.hide();
+    statusBarItems.remote.hide();
+
+    if (!serverManager.backendUrl) {
+        serverManager.stopServer();
+    }
+}
+
+/**
+ * Handle conanfile creation (when no conanfile existed before)
+ */
+function handleConanfileCreated(context: vscode.ExtensionContext, workspaceRoot: string, serverManager: ConanServerManager, conanStore: ConanStore, apiClient: ConanApiClient, statusBarItems: StatusBarItems) {
+    logger.info('🎉 Conanfile detected! Initializing extension...');
+    const conanfileInfo = detectConanfiles(workspaceRoot);
+
+    start(context, workspaceRoot, serverManager, conanStore, apiClient, statusBarItems);
+
+    vscode.window.showInformationMessage(`Conanfile detected (${conanfileInfo.preferredFile})! Conan extension activated.`);
+}
+
+/**
+ * Handle conanfile changes (when conanfile content or preference changes)
+ */
+function handleConanfileChanged(workspaceRoot: string, conanStore: ConanStore, apiClient: ConanApiClient) {
+    const conanfileInfo = detectConanfiles(workspaceRoot);
+
+    if (!conanfileInfo.hasAnyConanfile) {
+        return;
+    }
+
+    vscode.window.showInformationMessage(`Now using ${conanfileInfo.preferredFile} for Conan operations.`);
+
+    // Refresh packages since conanfile content or preference may have changed
+    refreshPackages(conanStore, apiClient);
+}
+
+/**
+ * Handle conanfile deletion (when all conanfiles are removed)
+ */
+function handleConanfileDeleted(serverManager: ConanServerManager, statusBarItems: StatusBarItems) {
+    logger.info('⚠️ No conanfiles found!');
+
+    stop(serverManager, statusBarItems);
+
+    vscode.window.showWarningMessage('All conanfiles removed.');
+}
+
+/**
+ * Create conanfile watcher for the workspace
+ */
+function createConanfileWatcher(context: vscode.ExtensionContext, workspaceRoot: string, serverManager: ConanServerManager, conanStore: ConanStore, apiClient: ConanApiClient, statusBarItems: StatusBarItems): vscode.FileSystemWatcher {
+    // Dispose existing watcher
+    if (conanfileWatcher) {
+        conanfileWatcher.dispose();
+    }
+
+    const watchPattern = getConanfileWatchPattern(workspaceRoot);
+    conanfileWatcher = vscode.workspace.createFileSystemWatcher(watchPattern);
+
+    conanfileWatcher.onDidCreate((uri) => {
+        logger.info(`Conanfile created: ${uri.fsPath}`);
+        handleConanfileCreated(context, workspaceRoot, serverManager, conanStore, apiClient, statusBarItems);
+    });
+
+    conanfileWatcher.onDidChange((uri) => {
+        if (isConanfileChange(uri.fsPath)) {
+            logger.info(`Conanfile modified: ${uri.fsPath}`);
+            handleConanfileChanged(workspaceRoot, conanStore, apiClient);
+        }
+    });
+
+    conanfileWatcher.onDidDelete((uri) => {
+        logger.info(`Conanfile deleted: ${uri.fsPath}`);
+        handleConanfileDeleted(serverManager, statusBarItems);
+    });
+
+    return conanfileWatcher;
+}
+
+/**
+ * Register extension commands
+ */
+function registerCommands(context: vscode.ExtensionContext, conanStore: ConanStore, apiClient: ConanApiClient, serverManager: ConanServerManager) {
+
+    // Register commands
+    context.subscriptions.push(
+        vscode.commands.registerCommand('conan.installPackages', () => {
+            if (conanStore && apiClient) {
+                installAllPackages(conanStore, apiClient);
+            }
+        }),
+
+        vscode.commands.registerCommand('conan.installPackage', (item?: ConanPackageItem) => {
+            if (conanStore && apiClient) {
+                installSinglePackage(conanStore, apiClient, item);
+            }
+        }),
+
+        vscode.commands.registerCommand('conan.createProfile', () => {
+            if (conanStore && apiClient) {
+                createProfile(conanStore, apiClient);
+            }
+        }),
+
+        vscode.commands.registerCommand('conan.addRemote', () => {
+            if (conanStore && apiClient) {
+                addRemote(conanStore, apiClient);
+            }
+        }),
+
+        vscode.commands.registerCommand('conan.uploadMissingPackages', () => {
+            if (conanStore && apiClient) {
+                uploadMissingPackages(conanStore, apiClient);
+            }
+        }),
+
+        vscode.commands.registerCommand('conan.uploadLocalPackage', (item?: ConanPackageItem) => {
+            if (conanStore && apiClient) {
+                uploadLocalPackage(conanStore, apiClient, item);
+            }
+        }),
+
+        vscode.commands.registerCommand('conan.startServer', () => {
+            if (conanStore) {
+                startServer(conanStore, serverManager, context);
+            }
+        }),
+
+        vscode.commands.registerCommand('conan.stopServer', () => {
+            if (conanStore) {
+                stopServer(conanStore, serverManager);
+            }
+        }),
+
+        vscode.commands.registerCommand('conan.refreshPackages', () => {
+            if (conanStore && apiClient) {
+                refreshPackages(conanStore, apiClient);
+            }
+        }),
+
+        vscode.commands.registerCommand('conan.refreshProfiles', () => {
+            if (conanStore && apiClient) {
+                refreshProfiles(conanStore, apiClient);
+            }
+        }),
+
+        vscode.commands.registerCommand('conan.refreshRemotes', () => {
+            if (conanStore && apiClient) {
+                refreshRemotes(conanStore, apiClient);
+            }
+        }),
+
+        vscode.commands.registerCommand('conan.selectHostProfile', () => {
+            if (conanStore) {
+                selectProfile(conanStore, 'host');
+            }
+        }),
+
+        vscode.commands.registerCommand('conan.selectBuildProfile', () => {
+            if (conanStore) {
+                selectProfile(conanStore, 'build');
+            }
+        }),
+
+        vscode.commands.registerCommand('conan.selectRemote', () => {
+            if (conanStore) {
+                selectRemote(conanStore);
+            }
+        }),
+
+        vscode.commands.registerCommand('conan.openProfileFile', (item?: ConanPackageItem | ConanProfileItem) => {
+            openProfileFile(item);
+        })
+    );
+}
+
 export function activate(context: vscode.ExtensionContext) {
     // Initialize logger first
     logger = vscode.window.createOutputChannel('Conan Package Manager', { log: true });
@@ -822,161 +1042,121 @@ export function activate(context: vscode.ExtensionContext) {
         }
     }
 
-
     // Check if workspace has conanfile
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (workspaceFolders) {
         const workspaceRoot = workspaceFolders[0].uri.fsPath;
-        const hasConanfile = fs.existsSync(path.join(workspaceRoot, 'conanfile.txt')) ||
-            fs.existsSync(path.join(workspaceRoot, 'conanfile.py'));
 
-        vscode.commands.executeCommand('setContext', 'workspaceHasConanfile', hasConanfile);
+        // Always create status bars (but they'll be hidden if no conanfile)
+        const hostProfileStatusBarItem = createProfileStatusBarItem('host');
+        context.subscriptions.push(hostProfileStatusBarItem);
+        const buildProfileStatusBarItem = createProfileStatusBarItem('build');
+        context.subscriptions.push(buildProfileStatusBarItem);
 
-        if (hasConanfile) {
+        // Initialize centralized store
+        const conanStore = new ConanStore();
+        conanStore.workspaceRoot = workspaceRoot;
 
-            // Initialize centralized store
-            const conanStore = new ConanStore();
-            conanStore.workspaceRoot = workspaceRoot;
+        // Load saved configuration into store
+        conanStore.initializeFromConfig();
 
-            // Load saved configuration into store
-            conanStore.initializeFromConfig();
+        // Initialize server manager and API client
+        const serverManager = new ConanServerManager(conanStore, backendUrl);
+        const apiClient = new ConanApiClient(serverManager);
 
-            // Initialize server manager and API client
-            const serverManager = new ConanServerManager(conanStore, backendUrl);
-            const apiClient = new ConanApiClient(serverManager);
-
-            const hostProfile = conanStore.activeHostProfile ? conanStore.activeHostProfile.name : 'None';
-            const buildProfile = conanStore.activeBuildProfile ? conanStore.activeBuildProfile.name : 'None';
-
-            // Initialize status bars
-            const hostProfileStatusBar = createProfileStatusBarItem('host');
-            context.subscriptions.push(hostProfileStatusBar);
-            const buildProfileStatusBar = createProfileStatusBarItem('build');
-            context.subscriptions.push(buildProfileStatusBar);
-
-            // Listen for profile changes to update status bars and refresh packages
-            conanStore.onActiveProfileChange((profileType) => {
-                if (profileType === 'host') {
-                    updateProfileStatusBar(hostProfileStatusBar, 'host', conanStore.activeHostProfile);
-                    updateHostProfileWatcher(conanStore, apiClient);
-                } else if (profileType === 'build') {
-                    updateProfileStatusBar(buildProfileStatusBar, 'build', conanStore.activeBuildProfile);
-                    updateBuildProfileWatcher(conanStore, apiClient);
-                }
-                refreshPackages(conanStore, apiClient);
-            });
-
-            // Initial status bar update and file watchers
-            updateProfileStatusBar(hostProfileStatusBar, 'host', conanStore.activeHostProfile);
-            updateHostProfileWatcher(conanStore, apiClient);
-            updateProfileStatusBar(buildProfileStatusBar, 'build', conanStore.activeBuildProfile);
-            updateBuildProfileWatcher(conanStore, apiClient);
-
-            let serverConnected: Promise<boolean>;
-            // Connect to external server or start our own
-            if (serverManager.backendUrl) {
-                logger.info(`Using external backend URL: ${serverManager.backendUrl}`);
-                // Connect to the external server and validate it's running
-                serverConnected = serverManager.connectToServer();
-            } else {
-                // Start our own embedded server
-                serverConnected = serverManager.startServer(workspaceRoot, context.extensionPath);
+        // Listen for profile changes to update status bars and refresh packages
+        conanStore.onActiveProfileChange((profileType) => {
+            if (!conanStore || !apiClient) {
+                return;
             }
 
-            serverConnected.then((connected) => {
-                if (connected) {
-                    refreshPackages(conanStore, apiClient);
-                    refreshProfiles(conanStore, apiClient);
-                    refreshRemotes(conanStore, apiClient);
+            if (profileType === 'host') {
+                updateProfileStatusBar(hostProfileStatusBarItem, 'host', conanStore.activeHostProfile);
+                updateHostProfileWatcher(conanStore, apiClient);
+            } else if (profileType === 'build') {
+                updateProfileStatusBar(buildProfileStatusBarItem, 'build', conanStore.activeBuildProfile);
+                updateBuildProfileWatcher(conanStore, apiClient);
+            }
+            refreshPackages(conanStore, apiClient);
+        });
+
+        // Initial status bar update and file watchers
+        updateProfileStatusBar(hostProfileStatusBarItem, 'host', conanStore.activeHostProfile);
+        updateHostProfileWatcher(conanStore, apiClient);
+        updateProfileStatusBar(buildProfileStatusBarItem, 'build', conanStore.activeBuildProfile);
+        updateBuildProfileWatcher(conanStore, apiClient);
+
+        // Initialize tree data providers with server support
+        const packageProvider = new ConanPackageProvider(conanStore);
+        const profileProvider = new ConanProfileProvider(conanStore);
+        const remoteProvider = new ConanRemoteProvider(conanStore);
+
+        // Register tree data providers
+        vscode.window.registerTreeDataProvider('conan.packages', packageProvider);
+        vscode.window.registerTreeDataProvider('conan.profiles', profileProvider);
+        vscode.window.registerTreeDataProvider('conan.remotes', remoteProvider);
+
+        const remoteStatusBarItem = createRemoteStatusBarItem();
+        context.subscriptions.push(remoteStatusBarItem);
+
+        // Listen for remote changes to update status bar
+        conanStore.onActiveRemoteChange((remote) => {
+            updateRemoteStatusBar(remoteStatusBarItem, remote);
+        });
+        // Initial status bar update
+        updateRemoteStatusBar(remoteStatusBarItem, conanStore.activeRemote);
+
+        const hostProfile = conanStore.activeHostProfile ? conanStore.activeHostProfile.name : 'None';
+        const buildProfile = conanStore.activeBuildProfile ? conanStore.activeBuildProfile.name : 'None';
+        const remote = conanStore.activeRemote === 'all' ? 'All ' : conanStore.activeRemote.name;
+        logger.info(`Final profiles after loading: Host=${hostProfile}, Build=${buildProfile}, Remote=${remote}`);
+
+        registerCommands(context, conanStore, apiClient, serverManager);
+        
+        // Create conanfile watcher regardless of current state
+        // This enables detection of conanfile creation/deletion
+        const conanfileWatcher = createConanfileWatcher(context, workspaceRoot, serverManager, conanStore, apiClient, {
+            hostProfile: hostProfileStatusBarItem,
+            buildProfile: buildProfileStatusBarItem,
+            remote: remoteStatusBarItem
+        });
+        context.subscriptions.push(conanfileWatcher);
+
+        // Also watch for configuration changes that might affect conanfile preference
+        context.subscriptions.push(
+            vscode.workspace.onDidChangeConfiguration((event) => {
+                if (event.affectsConfiguration('conan.preferredConanfileFormat')) {
+                    logger.info('Conanfile preference configuration changed');
+                    handleConanfileChanged(workspaceRoot, conanStore, apiClient);
                 }
+            })
+        );
+
+        // Start extension if conanfile already exists
+        const conanfileInfo = detectConanfiles(workspaceRoot);
+        if( conanfileInfo.hasAnyConanfile ) {
+            start(context, workspaceRoot, serverManager, conanStore, apiClient, {
+                hostProfile: hostProfileStatusBarItem,
+                buildProfile: buildProfileStatusBarItem,
+                remote: remoteStatusBarItem
             });
-
-            // Initialize tree data providers with server support
-            const packageProvider = new ConanPackageProvider(conanStore);
-            const profileProvider = new ConanProfileProvider(conanStore);
-            const remoteProvider = new ConanRemoteProvider(conanStore);
-
-            // Register tree data providers
-            vscode.window.registerTreeDataProvider('conan.packages', packageProvider);
-            vscode.window.registerTreeDataProvider('conan.profiles', profileProvider);
-            vscode.window.registerTreeDataProvider('conan.remotes', remoteProvider);
-
-
-            const remote = conanStore.activeRemote === 'all' ? 'All ' : conanStore.activeRemote.name;
-            const remoteStatusBar = createRemoteStatusBarItem();
-            context.subscriptions.push(remoteStatusBar);
-
-            updateRemoteStatusBar(conanStore);
-
-            logger.info(`Final profiles after loading: Host=${hostProfile}, Build=${buildProfile}, Remote=${remote}`);
-
-            // Register commands
-            context.subscriptions.push(
-                vscode.commands.registerCommand('conan.installPackages', () => {
-                    installAllPackages(conanStore, apiClient);
-                }),
-
-                vscode.commands.registerCommand('conan.installPackage', (item?: ConanPackageItem) => {
-                    installSinglePackage(conanStore, apiClient, item);
-                }),
-
-                vscode.commands.registerCommand('conan.createProfile', () => {
-                    createProfile(conanStore, apiClient);
-                }),
-
-                vscode.commands.registerCommand('conan.addRemote', () => {
-                    addRemote(conanStore, apiClient);
-                }),
-
-                vscode.commands.registerCommand('conan.uploadMissingPackages', () => {
-                    uploadMissingPackages(conanStore, apiClient);
-                }),
-
-                vscode.commands.registerCommand('conan.uploadLocalPackage', (item?: ConanPackageItem) => {
-                    uploadLocalPackage(conanStore, apiClient, item);
-                }),
-
-                vscode.commands.registerCommand('conan.startServer', () => {
-                    startServer(conanStore, serverManager, context);
-                }),
-
-                vscode.commands.registerCommand('conan.stopServer', () => {
-                    stopServer(conanStore, serverManager);
-                }),
-
-                vscode.commands.registerCommand('conan.refreshPackages', () => {
-                    refreshPackages(conanStore, apiClient);
-                }),
-
-                vscode.commands.registerCommand('conan.refreshProfiles', () => {
-                    refreshProfiles(conanStore, apiClient);
-                }),
-
-                vscode.commands.registerCommand('conan.refreshRemotes', () => {
-                    refreshRemotes(conanStore, apiClient);
-                }),
-
-                vscode.commands.registerCommand('conan.selectHostProfile', () => {
-                    selectProfile(conanStore, 'host');
-                }),
-
-                vscode.commands.registerCommand('conan.selectBuildProfile', () => {
-                    selectProfile(conanStore, 'build');
-                }),
-
-                vscode.commands.registerCommand('conan.selectRemote', () => {
-                    selectRemote(conanStore);
-                }),
-
-                vscode.commands.registerCommand('conan.openProfileFile', (item?: ConanPackageItem | ConanProfileItem) => {
-                    openProfileFile(item);
-                })
-            );
-
-            // Show welcome message
-            vscode.window.showInformationMessage('Conan Package Manager extension activated! 🎉');
         }
+
+        // Show welcome message
+        vscode.window.showInformationMessage('Conan Package Manager extension activated! 🎉');
     }
 }
 
-export function deactivate() { }
+export function deactivate() {
+    // Clean up file watchers
+    if (hostProfileWatcher) {
+        hostProfileWatcher.dispose();
+        hostProfileWatcher = undefined;
+    }
+    if (buildProfileWatcher) {
+        buildProfileWatcher.dispose();
+        buildProfileWatcher = undefined;
+    }
+
+    logger?.info('🔌 Conan Package Manager extension deactivated');
+}
