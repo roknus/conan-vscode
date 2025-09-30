@@ -9,6 +9,8 @@ import { ConanPackageProvider } from './tree_data_providers/conan_package_provid
 import { ConanProfileItem } from './tree_data_providers/conan_profile_item';
 import { initializeLogger } from './logger';
 import { detectConanfiles, getConanfileWatchPattern, isConanfileChange } from './conanfile_utils';
+import { ProfileFolderWatcherService, ProfileFolderChangeEvent } from './services/profile_folder_watcher_service';
+import { ActiveProfileWatcherService, ActiveProfileChangeEvent } from './services/active_profile_watcher_service';
 
 // Global logger instance
 let logger: vscode.LogOutputChannel;
@@ -19,12 +21,14 @@ interface StatusBarItems {
     remote: vscode.StatusBarItem;
 }
 
-// Global state for profile file watchers
-let hostProfileWatcher: vscode.FileSystemWatcher | undefined;
-let buildProfileWatcher: vscode.FileSystemWatcher | undefined;
-
 // Global state for conanfile watcher
 let conanfileWatcher: vscode.FileSystemWatcher | undefined;
+
+// Profile folder watcher service
+let profileFolderWatcherService: ProfileFolderWatcherService | undefined;
+
+// Active profile watcher service
+let activeProfileWatcherService: ActiveProfileWatcherService | undefined;
 
 /**
  * QuickPickItem that stores the actual setting value alongside display information
@@ -749,27 +753,9 @@ async function openProfileFile(item?: ConanPackageItem | ConanProfileItem): Prom
  * Create or update file watcher for host profile
  */
 function updateHostProfileWatcher(conanStore: ConanStore, apiClient: ConanApiClient) {
-    // Dispose existing watcher
-    if (hostProfileWatcher) {
-        hostProfileWatcher.dispose();
-        hostProfileWatcher = undefined;
-    }
-
-    if (conanStore.activeHostProfile && conanStore.activeHostProfile.path) {
-        const profileUri = vscode.Uri.file(conanStore.activeHostProfile.path);
-        hostProfileWatcher = vscode.workspace.createFileSystemWatcher(profileUri.fsPath);
-
-        hostProfileWatcher.onDidChange(() => {
-            logger.info(`Host profile file changed: ${conanStore.activeHostProfile?.path}`);
-            refreshPackages(conanStore, apiClient);
-        });
-
-        hostProfileWatcher.onDidDelete(() => {
-            logger.warn(`Host profile file deleted: ${conanStore.activeHostProfile?.path}`);
-            conanStore.activeHostProfile = null;
-            conanStore.saveConfiguration();
-            vscode.window.showWarningMessage(`Host profile file was deleted. Active host profile reset to None.`);
-        });
+    // This function is now handled by ActiveProfileWatcherService
+    if (activeProfileWatcherService) {
+        activeProfileWatcherService.setHostProfile(conanStore.activeHostProfile);
     }
 }
 
@@ -777,27 +763,9 @@ function updateHostProfileWatcher(conanStore: ConanStore, apiClient: ConanApiCli
  * Create or update file watcher for build profile
  */
 function updateBuildProfileWatcher(conanStore: ConanStore, apiClient: ConanApiClient) {
-    // Dispose existing watcher
-    if (buildProfileWatcher) {
-        buildProfileWatcher.dispose();
-        buildProfileWatcher = undefined;
-    }
-
-    if (conanStore.activeBuildProfile && conanStore.activeBuildProfile.path) {
-        const profileUri = vscode.Uri.file(conanStore.activeBuildProfile.path);
-        buildProfileWatcher = vscode.workspace.createFileSystemWatcher(profileUri.fsPath);
-
-        buildProfileWatcher.onDidChange(() => {
-            logger.info(`Build profile file changed: ${conanStore.activeBuildProfile?.path}`);
-            refreshPackages(conanStore, apiClient);
-        });
-
-        buildProfileWatcher.onDidDelete(() => {
-            logger.warn(`Build profile file deleted: ${conanStore.activeBuildProfile?.path}`);
-            conanStore.activeBuildProfile = null;
-            conanStore.saveConfiguration();
-            vscode.window.showWarningMessage(`Build profile file was deleted. Active build profile reset to None.`);
-        });
+    // This function is now handled by ActiveProfileWatcherService
+    if (activeProfileWatcherService) {
+        activeProfileWatcherService.setBuildProfile(conanStore.activeBuildProfile);
     }
 }
 
@@ -825,11 +793,59 @@ function start(context: vscode.ExtensionContext, workspaceRoot: string, serverMa
         serverConnected = serverManager.startServer(workspaceRoot, context.extensionPath);
     }
 
-    serverConnected.then((connected) => {
+    serverConnected.then(async (connected) => {
         if (connected && conanStore && apiClient) {
             refreshPackages(conanStore, apiClient);
             refreshProfiles(conanStore, apiClient);
             refreshRemotes(conanStore, apiClient);
+
+            // Initialize profile folder watcher service after server is connected
+            profileFolderWatcherService = new ProfileFolderWatcherService();
+
+            // Register callback for profile folder changes
+            profileFolderWatcherService.onProfileFolderChange((event: ProfileFolderChangeEvent) => {
+                refreshProfiles(conanStore, apiClient);
+            });
+
+            // Initialize active profile watcher service
+            activeProfileWatcherService = new ActiveProfileWatcherService();
+
+            // Register callback for active profile file changes
+            activeProfileWatcherService.onActiveProfileChange((event: ActiveProfileChangeEvent) => {
+                if (event.type === 'changed') {
+                    logger.info(`${event.profileType} profile file changed, refreshing packages`);
+                    refreshPackages(conanStore, apiClient);
+                } else if (event.type === 'deleted') {
+                    if (event.profileType === 'host') {
+                        conanStore.activeHostProfile = null;
+                        vscode.window.showWarningMessage(`Host profile file was deleted. Active host profile reset to None.`);
+                    } else if (event.profileType === 'build') {
+                        conanStore.activeBuildProfile = null;
+                        vscode.window.showWarningMessage(`Build profile file was deleted. Active build profile reset to None.`);
+                    }
+                    conanStore.saveConfiguration();
+                }
+            });
+
+            try {
+                // Get global profiles path from the API
+                const globalProfilesPath = await apiClient.getConanHome();
+
+                // Get local profiles path from configuration
+                const config = vscode.workspace.getConfiguration('conan');
+                const localProfilesPath = config.get<string>('localProfilesPath', '.conan2/profiles');
+                const absoluteLocalProfilesPath = localProfilesPath.startsWith('.') ?
+                    `${workspaceRoot}/${localProfilesPath}` : localProfilesPath;
+
+                // Initialize with both paths
+                await profileFolderWatcherService.initialize(`${globalProfilesPath}/profiles`, absoluteLocalProfilesPath);
+
+                // Register the services as disposable resources
+                context.subscriptions.push(profileFolderWatcherService);
+                context.subscriptions.push(activeProfileWatcherService);
+            } catch (error) {
+                logger.error('Failed to initialize profile folder watcher service:', error);
+            }
         }
     });
 }
@@ -846,6 +862,18 @@ function stop(serverManager: ConanServerManager, statusBarItems: StatusBarItems)
     statusBarItems.hostProfile.hide();
     statusBarItems.buildProfile.hide();
     statusBarItems.remote.hide();
+
+    // Dispose profile folder watcher service
+    if (profileFolderWatcherService) {
+        profileFolderWatcherService.dispose();
+        profileFolderWatcherService = undefined;
+    }
+
+    // Dispose active profile watcher service
+    if (activeProfileWatcherService) {
+        activeProfileWatcherService.dispose();
+        activeProfileWatcherService = undefined;
+    }
 
     if (!serverManager.backendUrl) {
         serverManager.stopServer();
@@ -1130,6 +1158,22 @@ export function activate(context: vscode.ExtensionContext) {
                     logger.info('Conanfile preference configuration changed');
                     handleConanfileChanged(workspaceRoot, conanStore, apiClient);
                 }
+
+                // Watch for local profiles path changes
+                if (event.affectsConfiguration('conan.localProfilesPath')) {
+                    logger.info('Local profiles path configuration changed');
+                    if (profileFolderWatcherService) {
+                        // Get the new local profiles path and update the watcher
+                        const config = vscode.workspace.getConfiguration('conan');
+                        const localProfilesPath = config.get<string>('localProfilesPath', '.conan2/profiles');
+                        const absoluteLocalProfilesPath = localProfilesPath.startsWith('.') ?
+                            `${workspaceRoot}/${localProfilesPath}` : localProfilesPath;
+
+                        profileFolderWatcherService.setLocalProfileFolder(absoluteLocalProfilesPath);
+                        // Refresh profiles to pick up any new profiles in the new location
+                        refreshProfiles(conanStore, apiClient);
+                    }
+                }
             })
         );
 
@@ -1149,15 +1193,5 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {
-    // Clean up file watchers
-    if (hostProfileWatcher) {
-        hostProfileWatcher.dispose();
-        hostProfileWatcher = undefined;
-    }
-    if (buildProfileWatcher) {
-        buildProfileWatcher.dispose();
-        buildProfileWatcher = undefined;
-    }
-
     logger?.info('🔌 Conan Package Manager extension deactivated');
 }

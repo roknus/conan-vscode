@@ -143,4 +143,8 @@ export class ConanApiClient {
     async getUploadStatus(): Promise<any> {
         return this.makeRequest('/upload/status');
     }
+
+    async getConanHome(): Promise<string> {
+        return this.makeRequest('/config/home');
+    }
 }

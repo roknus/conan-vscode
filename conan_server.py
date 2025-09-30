@@ -877,6 +877,21 @@ async def get_settings() -> ConanSettings:
             status_code=500, detail=f"Error loading settings: {str(e)}")
 
 
+@app.get("/config/home")
+async def get_conan_home():
+    """Get Conan home directory path."""
+    if not conan_api:
+        raise HTTPException(
+            status_code=500, detail="Conan API not initialized")
+
+    try:
+        home_folder = conan_api.config.home()
+        return home_folder
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error getting Conan home: {str(e)}")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Conan VS Code Extension API Server")
