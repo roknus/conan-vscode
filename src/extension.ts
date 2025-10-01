@@ -217,6 +217,8 @@ async function selectRemote(conanStore: ConanStore): Promise<void> {
 
 async function refreshPackages(conanStore: ConanStore, apiClient: ConanApiClient): Promise<void> {
 
+    conanStore.clearPackageCache();
+
     if (conanStore.activeHostProfile === null) {
         vscode.window.showErrorMessage('No active host profile selected. Please select a host profile before refreshing packages.');
         return;
@@ -228,7 +230,6 @@ async function refreshPackages(conanStore: ConanStore, apiClient: ConanApiClient
     }
 
     try {
-        conanStore.clearPackageCache();
         const packages = await apiClient.getPackages(
             conanStore.workspaceRoot,
             conanStore.activeHostProfile.path,
@@ -807,7 +808,7 @@ function start(context: vscode.ExtensionContext, workspaceRoot: string, serverMa
 
     // Update the context for UI visibility
     vscode.commands.executeCommand('setContext', 'workspaceHasConanfile', true);
-    
+
     // Update profile status bar visibility
     statusBarItems.hostProfile.show();
     statusBarItems.buildProfile.show();
@@ -1112,7 +1113,7 @@ export function activate(context: vscode.ExtensionContext) {
         logger.info(`Final profiles after loading: Host=${hostProfile}, Build=${buildProfile}, Remote=${remote}`);
 
         registerCommands(context, conanStore, apiClient, serverManager);
-        
+
         // Create conanfile watcher regardless of current state
         // This enables detection of conanfile creation/deletion
         const conanfileWatcher = createConanfileWatcher(context, workspaceRoot, serverManager, conanStore, apiClient, {
@@ -1134,7 +1135,7 @@ export function activate(context: vscode.ExtensionContext) {
 
         // Start extension if conanfile already exists
         const conanfileInfo = detectConanfiles(workspaceRoot);
-        if( conanfileInfo.hasAnyConanfile ) {
+        if (conanfileInfo.hasAnyConanfile) {
             start(context, workspaceRoot, serverManager, conanStore, apiClient, {
                 hostProfile: hostProfileStatusBarItem,
                 buildProfile: buildProfileStatusBarItem,

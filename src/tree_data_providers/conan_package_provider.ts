@@ -59,6 +59,15 @@ export class ConanPackageProvider implements vscode.TreeDataProvider<ConanPackag
                 try {
                     const packages = this.conanStore.getPackages();
                     if (!packages) {
+                        if (this.conanStore.activeBuildProfile === null || this.conanStore.activeHostProfile === null) {
+                            const item = new vscode.TreeItem('Profile not selected', vscode.TreeItemCollapsibleState.None);
+                            item.iconPath = new vscode.ThemeIcon('info');
+                            item.contextValue = 'info';
+                            item.tooltip = 'Select host and build profiles';
+                            item.description = '';
+                            return [item];
+                        }
+
                         const item = new vscode.TreeItem('Loading packages...', vscode.TreeItemCollapsibleState.None);
                         item.iconPath = new vscode.ThemeIcon('info');
                         item.contextValue = 'info';
