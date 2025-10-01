@@ -8,13 +8,13 @@ export class ConanPackageProvider implements vscode.TreeDataProvider<ConanPackag
     readonly onDidChangeTreeData: vscode.Event<void> = this._onDidChangeTreeData.event;
 
     constructor(private conanStore: ConanStore) {
-        // Register for data changes
-        this.conanStore.onDataChange(() => {
+        // Register for state changes
+        this.conanStore.subscribe(state => state.serverState, () => {
             this._onDidChangeTreeData.fire();
         });
 
-        // Register for task state changes
-        this.conanStore.onTaskStateChange(() => {
+        // Register for packages state changes
+        this.conanStore.subscribe(state => state.packages, () => {
             this._onDidChangeTreeData.fire();
         });
     }

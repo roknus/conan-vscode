@@ -17,39 +17,19 @@ export interface ActiveProfileChangeEvent {
 export class ActiveProfileWatcherService implements vscode.Disposable {
     private hostProfileWatcher: vscode.FileSystemWatcher | undefined;
     private buildProfileWatcher: vscode.FileSystemWatcher | undefined;
-    private changeCallbacks: ((event: ActiveProfileChangeEvent) => void)[] = [];
+    
+    // Replace callback array with EventEmitter
+    private readonly _onActiveProfileChange = new vscode.EventEmitter<ActiveProfileChangeEvent>();
+    readonly onActiveProfileChange = this._onActiveProfileChange.event;
 
     constructor() {
-    }
-
-    /**
-     * Register callback for active profile file changes
-     */
-    onActiveProfileChange(callback: (event: ActiveProfileChangeEvent) => void): void {
-        this.changeCallbacks.push(callback);
-    }
-
-    /**
-     * Remove callback for active profile file changes
-     */
-    removeActiveProfileChangeCallback(callback: (event: ActiveProfileChangeEvent) => void): void {
-        const index = this.changeCallbacks.indexOf(callback);
-        if (index > -1) {
-            this.changeCallbacks.splice(index, 1);
-        }
     }
 
     /**
      * Notify all callbacks of active profile file change
      */
     private notifyActiveProfileChange(event: ActiveProfileChangeEvent): void {
-        this.changeCallbacks.forEach(callback => {
-            try {
-                callback(event);
-            } catch (error) {
-                this.logger.error('Error in active profile change callback:', error);
-            }
-        });
+        this._onActiveProfileChange.fire(event);
     }
 
     /**
@@ -124,8 +104,8 @@ export class ActiveProfileWatcherService implements vscode.Disposable {
             this.buildProfileWatcher.dispose();
             this.buildProfileWatcher = undefined;
         }
-        // Clear callbacks
-        this.changeCallbacks.length = 0;
+        // Dispose EventEmitter
+        this._onActiveProfileChange.dispose();
     }
 
     private get logger() {

@@ -15,39 +15,19 @@ export interface ProfileFolderChangeEvent {
 export class ProfileFolderWatcherService implements vscode.Disposable {
     private globalProfileFolderWatcher: vscode.FileSystemWatcher | undefined;
     private localProfileFolderWatcher: vscode.FileSystemWatcher | undefined;
-    private changeCallbacks: ((event: ProfileFolderChangeEvent) => void)[] = [];
+    
+    // Replace callback array with EventEmitter
+    private readonly _onProfileFolderChange = new vscode.EventEmitter<ProfileFolderChangeEvent>();
+    readonly onProfileFolderChange = this._onProfileFolderChange.event;
 
     constructor() {
-    }
-
-    /**
-     * Register callback for profile folder changes
-     */
-    onProfileFolderChange(callback: (event: ProfileFolderChangeEvent) => void): void {
-        this.changeCallbacks.push(callback);
-    }
-
-    /**
-     * Remove callback for profile folder changes
-     */
-    removeProfileFolderChangeCallback(callback: (event: ProfileFolderChangeEvent) => void): void {
-        const index = this.changeCallbacks.indexOf(callback);
-        if (index > -1) {
-            this.changeCallbacks.splice(index, 1);
-        }
     }
 
     /**
      * Notify all callbacks of profile folder change
      */
     private notifyProfileFolderChange(event: ProfileFolderChangeEvent): void {
-        this.changeCallbacks.forEach(callback => {
-            try {
-                callback(event);
-            } catch (error) {
-                this.logger.error('Error in profile folder change callback:', error);
-            }
-        });
+        this._onProfileFolderChange.fire(event);
     }
 
     /**
@@ -136,8 +116,8 @@ export class ProfileFolderWatcherService implements vscode.Disposable {
             this.localProfileFolderWatcher.dispose();
             this.localProfileFolderWatcher = undefined;
         }
-        // Clear callbacks
-        this.changeCallbacks.length = 0;
+        // Dispose EventEmitter
+        this._onProfileFolderChange.dispose();
     }
 
     /**

@@ -9,17 +9,12 @@ export class ConanRemoteProvider implements vscode.TreeDataProvider<ConanRemoteI
 
     constructor(private conanStore: ConanStore) {
         // Register for server state changes
-        this.conanStore.onServerStateChange((state) => {
+        this.conanStore.subscribe(state => state.serverState, () => {
             this._onDidChangeTreeData.fire();
         });
 
-        // Register for data changes
-        this.conanStore.onDataChange(() => {
-            this._onDidChangeTreeData.fire();
-        });
-
-        // Register for task state changes
-        this.conanStore.onTaskStateChange(() => {
+        // Register for remotes state changes
+        this.conanStore.subscribe(state => state.remotes, () => {
             this._onDidChangeTreeData.fire();
         });
     }
