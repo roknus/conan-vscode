@@ -222,8 +222,6 @@ async def get_packages(host_profile: str, build_profile: str, remote: Optional[s
         packages = await parse_conanfile(conanfile_path, host_profile, build_profile, remote)
 
         return packages
-    except HTTPException:
-        raise  # Re-raise HTTP exceptions from find_conanfile
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error parsing conanfile: {str(e)}")

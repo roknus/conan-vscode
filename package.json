@@ -259,6 +259,7 @@
       "properties": {
         "conan.activeHostProfile": {
           "type": "object",
+          "default": null,
           "description": "Active Conan host profile for package operations",
           "properties": {
             "displayName": {
@@ -274,6 +275,7 @@
         },
         "conan.activeBuildProfile": {
           "type": "object",
+          "default": null,
           "description": "Active Conan build profile for package operations",
           "properties": {
             "displayName": {
