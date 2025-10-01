@@ -794,9 +794,6 @@ function start(context: vscode.ExtensionContext, workspaceRoot: string, serverMa
 
     serverConnected.then(async (connected) => {
         if (connected && conanStore && apiClient) {
-            refreshPackages(conanStore, apiClient);
-            refreshProfiles(conanStore, apiClient);
-            refreshRemotes(conanStore, apiClient);
 
             // Initialize profile folder watcher service after server is connected
             profileFolderWatcherService = new ProfileFolderWatcherService();
@@ -842,6 +839,13 @@ function start(context: vscode.ExtensionContext, workspaceRoot: string, serverMa
                 // Register the services as disposable resources
                 context.subscriptions.push(profileFolderWatcherService);
                 context.subscriptions.push(activeProfileWatcherService);
+
+                // Load saved configuration into store
+                conanStore.initializeFromConfig();
+
+                refreshProfiles(conanStore, apiClient);
+                refreshRemotes(conanStore, apiClient);
+                refreshPackages(conanStore, apiClient);
             } catch (error) {
                 logger.error('Failed to initialize profile folder watcher service:', error);
             }
@@ -1076,43 +1080,54 @@ export function activate(context: vscode.ExtensionContext) {
         const workspaceRoot = workspaceFolders[0].uri.fsPath;
 
         // Always create status bars (but they'll be hidden if no conanfile)
-        const hostProfileStatusBarItem = createProfileStatusBarItem('host');
-        context.subscriptions.push(hostProfileStatusBarItem);
-        const buildProfileStatusBarItem = createProfileStatusBarItem('build');
-        context.subscriptions.push(buildProfileStatusBarItem);
 
         // Initialize centralized store
         const conanStore = new ConanStore();
         conanStore.workspaceRoot = workspaceRoot;
 
-        // Load saved configuration into store
-        conanStore.initializeFromConfig();
+        // Register the store as a disposable resource
+        context.subscriptions.push(conanStore);
 
         // Initialize server manager and API client
         const serverManager = new ConanServerManager(conanStore, backendUrl);
         const apiClient = new ConanApiClient(serverManager);
 
-        // Listen for profile changes to update status bars and refresh packages
-        conanStore.onActiveProfileChange((profileType) => {
-            if (!conanStore || !apiClient) {
-                return;
-            }
-
-            if (profileType === 'host') {
-                updateProfileStatusBar(hostProfileStatusBarItem, 'host', conanStore.activeHostProfile);
+        // Initialize Host Profile status bar item
+        const hostProfileStatusBarItem = createProfileStatusBarItem('host');
+        context.subscriptions.push(hostProfileStatusBarItem);
+        context.subscriptions.push(
+            conanStore.subscribe(state => state.activeHostProfile, (profile) => {
+                if (!conanStore || !apiClient) {
+                    return;
+                }
+                updateProfileStatusBar(hostProfileStatusBarItem, 'host', profile);
                 updateHostProfileWatcher(conanStore, apiClient);
-            } else if (profileType === 'build') {
-                updateProfileStatusBar(buildProfileStatusBarItem, 'build', conanStore.activeBuildProfile);
-                updateBuildProfileWatcher(conanStore, apiClient);
-            }
-            refreshPackages(conanStore, apiClient);
-        });
+                refreshPackages(conanStore, apiClient);
+            }));
 
-        // Initial status bar update and file watchers
-        updateProfileStatusBar(hostProfileStatusBarItem, 'host', conanStore.activeHostProfile);
-        updateHostProfileWatcher(conanStore, apiClient);
-        updateProfileStatusBar(buildProfileStatusBarItem, 'build', conanStore.activeBuildProfile);
-        updateBuildProfileWatcher(conanStore, apiClient);
+        // Initialize Build Profile status bar item
+        const buildProfileStatusBarItem = createProfileStatusBarItem('build');
+        context.subscriptions.push(buildProfileStatusBarItem);
+        context.subscriptions.push(
+            conanStore.subscribe(state => state.activeBuildProfile, (profile) => {
+                if (!conanStore || !apiClient) {
+                    return;
+                }
+
+                updateProfileStatusBar(buildProfileStatusBarItem, 'build', profile);
+                updateBuildProfileWatcher(conanStore, apiClient);
+                refreshPackages(conanStore, apiClient);
+            })
+        );
+
+        // Initialize Remote status bar item
+        const remoteStatusBarItem = createRemoteStatusBarItem();
+        context.subscriptions.push(remoteStatusBarItem);
+        context.subscriptions.push(
+            conanStore.subscribe(state => state.activeRemote, (remote) => {
+                updateRemoteStatusBar(remoteStatusBarItem, remote);
+            })
+        );
 
         // Initialize tree data providers with server support
         const packageProvider = new ConanPackageProvider(conanStore);
@@ -1123,21 +1138,6 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.registerTreeDataProvider('conan.packages', packageProvider);
         vscode.window.registerTreeDataProvider('conan.profiles', profileProvider);
         vscode.window.registerTreeDataProvider('conan.remotes', remoteProvider);
-
-        const remoteStatusBarItem = createRemoteStatusBarItem();
-        context.subscriptions.push(remoteStatusBarItem);
-
-        // Listen for remote changes to update status bar
-        conanStore.onActiveRemoteChange((remote) => {
-            updateRemoteStatusBar(remoteStatusBarItem, remote);
-        });
-        // Initial status bar update
-        updateRemoteStatusBar(remoteStatusBarItem, conanStore.activeRemote);
-
-        const hostProfile = conanStore.activeHostProfile ? conanStore.activeHostProfile.name : 'None';
-        const buildProfile = conanStore.activeBuildProfile ? conanStore.activeBuildProfile.name : 'None';
-        const remote = conanStore.activeRemote === 'all' ? 'All ' : conanStore.activeRemote.name;
-        logger.info(`Final profiles after loading: Host=${hostProfile}, Build=${buildProfile}, Remote=${remote}`);
 
         registerCommands(context, conanStore, apiClient, serverManager);
 

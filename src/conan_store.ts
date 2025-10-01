@@ -66,163 +66,182 @@ interface StoreAction {
     payload?: any;
 }
 
+interface State {
+    packages: PackageInfo[] | undefined;
+    profiles: Profile[] | undefined;
+    remotes: Remote[] | undefined;
+    serverState: ServerState;
+    activeHostProfile: Profile | null;
+    activeBuildProfile: Profile | null;
+    activeRemote: Remote | AllRemotes;
+    workspaceRoot: string;
+    currentTask: RunningTask | null;
+}
+
+// Individual reducers for each piece of state
+function packagesReducer(state: PackageInfo[] | undefined, action: StoreAction): PackageInfo[] | undefined {
+    if (action.type === 'SET_PACKAGES') {
+        return action.payload;
+    }
+    return state;
+}
+
+function profilesReducer(state: Profile[] | undefined, action: StoreAction): Profile[] | undefined {
+    if (action.type === 'SET_PROFILES') {
+        return action.payload;
+    }
+    return state;
+}
+
+function remotesReducer(state: Remote[] | undefined, action: StoreAction): Remote[] | undefined {
+    if (action.type === 'SET_REMOTES') {
+        return action.payload;
+    }
+    return state;
+}
+
+function serverStateReducer(state: ServerState, action: StoreAction): ServerState {
+    if (action.type === 'SET_SERVER_STATE') {
+        return action.payload;
+    }
+    return state;
+}
+
+function activeHostProfileReducer(state: Profile | null, action: StoreAction): Profile | null {
+    if (action.type === 'SET_PROFILE' && action.payload.profileType === 'host') {
+        return action.payload.profile;
+    }
+    return state;
+}
+
+function activeBuildProfileReducer(state: Profile | null, action: StoreAction): Profile | null {
+    if (action.type === 'SET_PROFILE' && action.payload.profileType === 'build') {
+        return action.payload.profile;
+    }
+    return state;
+}
+
+function activeRemoteReducer(state: Remote | AllRemotes, action: StoreAction): Remote | AllRemotes {
+    if (action.type === 'SET_REMOTE') {
+        return action.payload;
+    }
+    return state;
+}
+
+function workspaceRootReducer(state: string, action: StoreAction): string {
+    if (action.type === 'SET_WORKSPACE_ROOT') {
+        return action.payload;
+    }
+    return state;
+}
+
+function currentTaskReducer(state: RunningTask | null, action: StoreAction): RunningTask | null {
+    if (action.type === 'SET_CURRENT_TASK') {
+        return action.payload;
+    }
+    return state;
+}
+
+function rootReducer(state: State, action: StoreAction): State {
+    return {
+        packages: packagesReducer(state.packages, action),
+        profiles: profilesReducer(state.profiles, action),
+        remotes: remotesReducer(state.remotes, action),
+        serverState: serverStateReducer(state.serverState, action),
+        activeHostProfile: activeHostProfileReducer(state.activeHostProfile, action),
+        activeBuildProfile: activeBuildProfileReducer(state.activeBuildProfile, action),
+        activeRemote: activeRemoteReducer(state.activeRemote, action),
+        workspaceRoot: workspaceRootReducer(state.workspaceRoot, action),
+        currentTask: currentTaskReducer(state.currentTask, action),
+    };
+}
+
 // Centralized store for managing all Conan data and state
-export class ConanStore {
-    private cachedPackages: PackageInfo[] | undefined = undefined;
-    private cachedProfiles: Profile[] | undefined = undefined;
-    private cachedRemotes: Remote[] | undefined = undefined;
-    private stateChangeCallbacks: (() => void)[] = [];
-    private activeProfileChangeCallbacks: ((profileType: ProfileType) => void)[] = [];
-    private activeRemoteChangeCallbacks: ((remote: Remote | AllRemotes) => void)[] = [];
-    private serverStateChangeCallbacks: ((state: ServerState) => void)[] = [];
+export class ConanStore implements vscode.Disposable {
 
-    // Task management
-    private currentTask: RunningTask | null = null;
-    private taskStateChangeCallbacks: ((task: RunningTask | null) => void)[] = [];
+    private state: State = {
+        packages: undefined,
+        profiles: undefined,
+        remotes: undefined,
+        serverState: 'stopped',
+        activeHostProfile: null,
+        activeBuildProfile: null,
+        activeRemote: 'all',
+        workspaceRoot: '',
+        currentTask: null
+    };
+    private _onStateChange = new vscode.EventEmitter<State>();
+    readonly onStateChange = this._onStateChange.event;
 
-    // Server state
-    private _serverState: ServerState = 'stopped';
-
-    // Active state
-    private _activeHostProfile: Profile | null = null;
-    private _activeBuildProfile: Profile | null = null;
-    private _activeRemote: Remote | AllRemotes = 'all';
-    private _workspaceRoot: string = '';
-
-    constructor() { }
-
-    // Reducer function for state updates
     dispatch(action: StoreAction): void {
-        switch (action.type) {
-            case 'SET_PACKAGES':
-                this.cachedPackages = action.payload;
-                this.notifyDataChange();
-                break;
-
-            case 'SET_SERVER_STATE':
-                if (this._serverState !== action.payload) {
-                    this._serverState = action.payload;
-                    this.dispatch({ type: 'SET_PACKAGES', payload: undefined });
-                    this.notifyServerStateChange(action.payload);
-                }
-                break;
-
-            case 'SET_PROFILE':
-                const { profileType, profile } = action.payload;
-                if (profileType === 'host' && this._activeHostProfile !== profile) {
-                    this._activeHostProfile = profile;
-                    this.dispatch({ type: 'SET_PACKAGES', payload: undefined });
-                    this.notifyActiveProfileChange('host');
-                } else if (profileType === 'build' && this._activeBuildProfile !== profile) {
-                    this._activeBuildProfile = profile;
-                    this.dispatch({ type: 'SET_PACKAGES', payload: undefined });
-                    this.notifyActiveProfileChange('build');
-                }
-                break;
-
-            case 'SET_REMOTE':
-                if (this._activeRemote !== action.payload) {
-                    this._activeRemote = action.payload;
-                    this.dispatch({ type: 'SET_PACKAGES', payload: undefined });
-                    this.notifyActiveRemoteChange(action.payload);
-                }
-                break;
-
-            case 'SET_WORKSPACE_ROOT':
-                if (this._workspaceRoot !== action.payload) {
-                    this._workspaceRoot = action.payload;
-                    this.dispatch({ type: 'SET_PACKAGES', payload: undefined });
-                    this.notifyDataChange();
-                }
-                break;
-
-            case 'SET_PROFILES':
-                this.cachedProfiles = action.payload;
-                this.notifyDataChange();
-                break;
-
-            case 'SET_REMOTES':
-                this.cachedRemotes = action.payload;
-                this.notifyDataChange();
-                break;
-
-            case 'SET_CURRENT_TASK':
-                this.currentTask = action.payload;
-                this.logger.info(action.payload ? `Task started: ${action.payload.description}` : 'Task completed');
-                this.notifyTaskStateChange(action.payload);
-                break;
-
-            default:
-                this.logger.warn(`Unknown store action type: ${(action as any).type}`);
-        }
+        this.state = rootReducer(this.state, action);
+        this._onStateChange.fire(this.state);
     }
 
-    // Server state management
-    getServerState(): ServerState {
-        return this._serverState;
-    }
-
-    setServerState(state: ServerState): void {
-        this.dispatch({ type: 'SET_SERVER_STATE', payload: state });
-    }
-
-    // Register callback for server state changes
-    onServerStateChange(callback: (state: ServerState) => void): void {
-        this.serverStateChangeCallbacks.push(callback);
-    }
-
-    // Remove server state callback
-    removeServerStateChangeCallback(callback: (state: ServerState) => void): void {
-        const index = this.serverStateChangeCallbacks.indexOf(callback);
-        if (index > -1) {
-            this.serverStateChangeCallbacks.splice(index, 1);
-        }
-    }
-
-    // Notify all callbacks of server state change
-    private notifyServerStateChange(state: ServerState): void {
-        this.serverStateChangeCallbacks.forEach(callback => {
-            try {
-                callback(state);
-            } catch (error) {
-                this.logger.error('Error in server state change callback:', error);
+    // Generic slice subscription
+    subscribe<T>(selector: (s: State) => T, listener: (value: T) => void): vscode.Disposable {
+        let last = selector(this.state);
+        return this.onStateChange(state => {
+            const next = selector(state);
+            if (next !== last) {
+                last = next;
+                listener(next);
             }
         });
     }
 
+    constructor() {
+    }
+
+    // Server state management
+    getServerState(): ServerState {
+        return this.state.serverState;
+    }
+
+    setServerState(state: ServerState): void {
+        if (this.state.serverState !== state) {
+            this.dispatch({ type: 'SET_SERVER_STATE', payload: state });
+            this.dispatch({ type: 'SET_PACKAGES', payload: undefined });
+        }
+    }
+
     // Profile management
     get activeHostProfile(): Profile | null {
-        return this._activeHostProfile;
+        return this.state.activeHostProfile;
     }
 
     set activeHostProfile(profile: Profile | null) {
         this.dispatch({ type: 'SET_PROFILE', payload: { profileType: 'host', profile } });
+        this.dispatch({ type: 'SET_PACKAGES', payload: undefined });
     }
 
     get activeBuildProfile(): Profile | null {
-        return this._activeBuildProfile;
+        return this.state.activeBuildProfile;
     }
 
     set activeBuildProfile(profile: Profile | null) {
         this.dispatch({ type: 'SET_PROFILE', payload: { profileType: 'build', profile } });
+        this.dispatch({ type: 'SET_PACKAGES', payload: undefined });
     }
 
     // Remote management
     get activeRemote(): Remote | AllRemotes {
-        return this._activeRemote;
+        return this.state.activeRemote;
     }
 
     set activeRemote(remote: Remote | AllRemotes) {
         this.dispatch({ type: 'SET_REMOTE', payload: remote });
+        this.dispatch({ type: 'SET_PACKAGES', payload: undefined });
     }
 
     // Workspace root management
     get workspaceRoot(): string {
-        return this._workspaceRoot;
+        return this.state.workspaceRoot;
     }
 
     set workspaceRoot(root: string) {
         this.dispatch({ type: 'SET_WORKSPACE_ROOT', payload: root });
+        this.dispatch({ type: 'SET_PACKAGES', payload: undefined });
     }
 
     // Initialize from saved configuration
@@ -231,97 +250,31 @@ export class ConanStore {
 
         const savedHostProfile = config.get<Profile | null>('activeHostProfile');
         if (savedHostProfile) {
-            this._activeHostProfile = savedHostProfile;
+            this.state.activeHostProfile = savedHostProfile;
         }
 
         const savedBuildProfile = config.get<Profile | null>('activeBuildProfile');
         if (savedBuildProfile) {
-            this._activeBuildProfile = savedBuildProfile;
+            this.state.activeBuildProfile = savedBuildProfile;
         }
 
         const savedRemote = config.get<Remote | AllRemotes>('activeRemote');
         if (savedRemote) {
-            this._activeRemote = savedRemote; // URL will be resolved later
+            this.state.activeRemote = savedRemote; // URL will be resolved later
         }
     }
 
     // Save current configuration
     async saveConfiguration(): Promise<void> {
         const config = vscode.workspace.getConfiguration('conan');
-        await config.update('activeHostProfile', this._activeHostProfile, vscode.ConfigurationTarget.Workspace);
-        await config.update('activeBuildProfile', this._activeBuildProfile, vscode.ConfigurationTarget.Workspace);
-        await config.update('activeRemote', this._activeRemote, vscode.ConfigurationTarget.Workspace);
-    }
-
-    // Register callback for data changes
-    onDataChange(callback: () => void): void {
-        this.stateChangeCallbacks.push(callback);
-    }
-
-    // Remove callback
-    removeDataChangeCallback(callback: () => void): void {
-        const index = this.stateChangeCallbacks.indexOf(callback);
-        if (index > -1) {
-            this.stateChangeCallbacks.splice(index, 1);
-        }
-    }
-
-    // Notify all callbacks of data change
-    private notifyDataChange(): void {
-        this.stateChangeCallbacks.forEach(callback => {
-            try {
-                callback();
-            } catch (error) {
-                this.logger.error('Error in data change callback:', error);
-            }
-        });
-    }
-
-    onActiveProfileChange(callback: (profileType: ProfileType) => void): void {
-        this.activeProfileChangeCallbacks.push(callback);
-    }
-    
-    removeActiveProfileChangeCallback(callback: (profileType: ProfileType) => void): void {
-        const index = this.activeProfileChangeCallbacks.indexOf(callback);
-        if (index > -1) {
-            this.activeProfileChangeCallbacks.splice(index, 1);
-        }
-    }
-
-    private notifyActiveProfileChange(profileType: ProfileType): void {
-        this.activeProfileChangeCallbacks.forEach(callback => {
-            try {
-                callback(profileType);
-            } catch (error) {
-                this.logger.error('Error in profile change callback:', error);
-            }
-        });
-    }
-
-    onActiveRemoteChange(callback: (remote: Remote | AllRemotes) => void): void {
-        this.activeRemoteChangeCallbacks.push(callback);
-    }
-
-    removeActiveRemoteChangeCallback(callback: (remote: Remote | AllRemotes) => void): void {
-        const index = this.activeRemoteChangeCallbacks.indexOf(callback);
-        if (index > -1) {
-            this.activeRemoteChangeCallbacks.splice(index, 1);
-        }
-    }
-
-    private notifyActiveRemoteChange(remote: Remote | AllRemotes): void {
-        this.activeRemoteChangeCallbacks.forEach(callback => {
-            try {
-                callback(remote);
-            } catch (error) {
-                this.logger.error('Error in remote change callback:', error);
-            }
-        });
+        await config.update('activeHostProfile', this.state.activeHostProfile, vscode.ConfigurationTarget.Workspace);
+        await config.update('activeBuildProfile', this.state.activeBuildProfile, vscode.ConfigurationTarget.Workspace);
+        await config.update('activeRemote', this.state.activeRemote, vscode.ConfigurationTarget.Workspace);
     }
 
     // Get packages (cached)
     getPackages(): PackageInfo[] | undefined {
-        return this.cachedPackages;
+        return this.state.packages;
     }
 
     // Set packages through reducer
@@ -337,26 +290,26 @@ export class ConanStore {
 
     // Get package by reference
     getPackageByRef(packageRef: string): PackageInfo | undefined {
-        return this.cachedPackages?.find(pkg => pkg.ref === packageRef);
+        return this.state.packages?.find(pkg => pkg.ref === packageRef);
     }
 
     // Check if cache is valid
     isCacheValid(): boolean {
-        return this.cachedPackages !== null && this._serverState === 'running';
+        return this.state.packages !== null && this.state.serverState === 'running';
     }
 
     // Get cache statistics
     getCacheStats(): { packageCount: number; isValid: boolean; lastRefresh: string } {
         return {
-            packageCount: this.cachedPackages?.length || 0,
-            isValid: this.cachedPackages !== null,
-            lastRefresh: `Workspace: ${this._workspaceRoot}, Remote: ${this._activeRemote}, Host: ${this._activeHostProfile}, Build: ${this._activeBuildProfile}`
+            packageCount: this.state.packages?.length || 0,
+            isValid: this.state.packages !== null,
+            lastRefresh: `Workspace: ${this.state.workspaceRoot}, Remote: ${this.state.activeRemote}, Host: ${this.state.activeHostProfile}, Build: ${this.state.activeBuildProfile}`
         };
     }
 
     // Profile management
     getProfiles(): Profile[] | undefined {
-        return this.cachedProfiles;
+        return this.state.profiles;
     }
 
     setProfiles(profiles: Profile[]): void {
@@ -370,7 +323,7 @@ export class ConanStore {
 
     // Remote management  
     getRemotes(): Remote[] | undefined {
-        return this.cachedRemotes;
+        return this.state.remotes;
     }
 
     setRemotes(remotes: Remote[]): void {
@@ -388,32 +341,15 @@ export class ConanStore {
     }
 
     getCurrentTask(): RunningTask | null {
-        return this.currentTask;
+        return this.state.currentTask;
     }
 
     isTaskRunning(): boolean {
-        return this.currentTask !== null;
+        return this.state.currentTask !== null;
     }
 
-    onTaskStateChange(callback: (task: RunningTask | null) => void): void {
-        this.taskStateChangeCallbacks.push(callback);
-    }
-
-    removeTaskStateChangeCallback(callback: (task: RunningTask | null) => void): void {
-        const index = this.taskStateChangeCallbacks.indexOf(callback);
-        if (index > -1) {
-            this.taskStateChangeCallbacks.splice(index, 1);
-        }
-    }
-
-    private notifyTaskStateChange(task: RunningTask | null): void {
-        this.taskStateChangeCallbacks.forEach(callback => {
-            try {
-                callback(task);
-            } catch (error) {
-                this.logger.error('Error in task state change callback:', error);
-            }
-        });
+    // Dispose method to clean up EventEmitters - implements vscode.Disposable
+    dispose(): void {
     }
 
     private get logger() {

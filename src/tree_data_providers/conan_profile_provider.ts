@@ -17,17 +17,12 @@ export class ConanProfileProvider implements vscode.TreeDataProvider<ConanProfil
 
     constructor(private conanStore: ConanStore) {
         // Register for server state changes
-        this.conanStore.onServerStateChange((state) => {
+        this.conanStore.subscribe(state => state.serverState, () => {
             this._onDidChangeTreeData.fire();
         });
-
-        // Register for data changes
-        this.conanStore.onDataChange(() => {
-            this._onDidChangeTreeData.fire();
-        });
-
-        // Register for task state changes
-        this.conanStore.onTaskStateChange(() => {
+        
+        // Register for profiles state changes
+        this.conanStore.subscribe(state => state.profiles, () => {
             this._onDidChangeTreeData.fire();
         });
     }
