@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { PackageInfo, PackageItemType } from '../conan_store';
+import { PackageInfo, PackageItemType, Remote } from '../conan_store';
 
 function get_ref(pkg: PackageInfo): string {
     return `${pkg.name}/${pkg.version}`;
@@ -13,6 +13,7 @@ export class ConanPackageItem extends vscode.TreeItem {
 
     constructor(
         public readonly packageInfo: PackageInfo,
+        public readonly activeRemote: Remote | 'all',
         public readonly collapsibleState: vscode.TreeItemCollapsibleState,
         public readonly itemType: PackageItemType
     ) {
@@ -50,7 +51,8 @@ export class ConanPackageItem extends vscode.TreeItem {
                     break;
             }
 
-            let tooltip = `${header}\n\n`;
+            let tooltip = `${header}\n`;
+            tooltip += `🔗 ID: ${packageInfo.id}\n\n`;
 
             // Local availability
             tooltip += `📁 Local:\n`;
@@ -58,9 +60,14 @@ export class ConanPackageItem extends vscode.TreeItem {
             tooltip += `\t📦 Binary: ${avail.local_status === 'recipe+binary' ? '✅' : '❌'}\n`;
 
             // Enhanced remote availability info
-            tooltip += `🌐 Remote:\n`;
-            tooltip += `\t🔨 Recipe: ${avail.remote_status.startsWith('recipe') ? '✅' : '❌'}\n`;
-            tooltip += `\t📦 Binary: ${avail.remote_status === 'recipe+binary' ? '✅' : '❌'}\n`;
+            tooltip += `🌐 Remotes:\n`;
+            for (const remoteStatus of avail.remotes_status) {
+                const isActiveRemote = (activeRemote !== 'all' && remoteStatus.remote_name === activeRemote.name);
+                const remoteLabel = isActiveRemote ? `${remoteStatus.remote_name} (active)` : remoteStatus.remote_name;
+                tooltip += `\t- ${remoteLabel}:\n`;
+                tooltip += `\t\t🔨 Recipe: ${remoteStatus.status.startsWith('recipe') ? '✅' : '❌'}\n`;
+                tooltip += `\t\t📦 Binary: ${remoteStatus.status === 'recipe+binary' ? '✅' : '❌'}\n`;
+            }
 
             // Only show incompatible warning if it's actually incompatible
             if (avail.is_incompatible) {

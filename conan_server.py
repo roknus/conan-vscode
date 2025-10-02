@@ -88,6 +88,11 @@ class ConanSettings(BaseModel):
     compiler: Dict[str, dict] = {}
     build_type: List[str | None] = []   # e.g., ["Debug", "Release"]
 
+class PackageRemoteStatus(BaseModel):
+    """Package availability status on a specific remote."""
+
+    remote_name: str
+    status: str
 
 class PackageAvailability(BaseModel):
     """Package availability information based on what Conan's analyze_binaries tells us."""
@@ -97,13 +102,14 @@ class PackageAvailability(BaseModel):
 
     # Local availability
     local_status: str = "none"
-    remote_status: str = "none"
+    remotes_status: List[PackageRemoteStatus] = []
 
 
 class ConanPackage(BaseModel):
     name: str
     version: str
     ref: str
+    id: str
     availability: PackageAvailability
     # Add support for nested dependencies
     dependencies: List['ConanPackage'] = []
@@ -122,6 +128,7 @@ class ConanRemote(BaseModel):
 
 
 class UploadRequest(BaseModel):
+    workspace_path: str
     remote_name: str
     packages: List[str]
     host_profile: str
@@ -130,19 +137,23 @@ class UploadRequest(BaseModel):
 
 
 class UploadLocalRequest(BaseModel):
+    workspace_path: str
     remote_name: str
     package_ref: str
+    package_id: str
     host_profile: str
     force: bool = False
 
 
 class InstallRequest(BaseModel):
+    workspace_path: str
     build_missing: bool = True
     host_profile: str
     build_profile: str
 
 
 class InstallPackageRequest(BaseModel):
+    workspace_path: str
     package_ref: str
     build_missing: bool = True
     host_profile: str
@@ -181,9 +192,12 @@ async def health_check():
     }
 
 
-def find_conanfile() -> str:
+def find_conanfile(workspace_path: str) -> str:
     """
-    Find conanfile in current working directory.
+    Find conanfile in the specified workspace directory.
+
+    Args:
+        workspace_path: Path to the workspace directory.
 
     Returns:
         Path to the found conanfile (conanfile.txt or conanfile.py)
@@ -191,8 +205,8 @@ def find_conanfile() -> str:
     Raises:
         HTTPException: If no conanfile is found
     """
-    conanfile_txt = "conanfile.txt"
-    conanfile_py = "conanfile.py"
+    conanfile_txt = os.path.join(workspace_path, "conanfile.txt")
+    conanfile_py = os.path.join(workspace_path, "conanfile.py")
 
     if os.path.exists(conanfile_txt):
         return os.path.abspath(conanfile_txt)
@@ -200,11 +214,15 @@ def find_conanfile() -> str:
         return os.path.abspath(conanfile_py)
     else:
         raise HTTPException(
-            status_code=404, detail="No conanfile found in current directory")
+            status_code=404, detail=f"No conanfile found in workspace directory: {workspace_path}")
 
 
 @app.get("/packages")
-async def get_packages(host_profile: str, build_profile: str, remote: Optional[str] = None) -> List[ConanPackage]:
+async def get_packages(
+        workspace_path: str,
+        host_profile: str,
+        build_profile: str,
+        remote: Optional[str] = None) -> List[ConanPackage]:
     """
     Get packages from conanfile in current workspace.
 
@@ -217,7 +235,7 @@ async def get_packages(host_profile: str, build_profile: str, remote: Optional[s
         List of packages with their availability status across local cache and remote(s)
     """
     try:
-        conanfile_path = find_conanfile()
+        conanfile_path = find_conanfile(workspace_path)
 
         packages = await parse_conanfile(conanfile_path, host_profile, build_profile, remote)
 
@@ -248,15 +266,17 @@ def create_package_from_node(node: Node, remotes: List[Remote]) -> ConanPackage:
     is_incompatible = binary_status == BINARY_INVALID
     incompatible_reason = node.conanfile.info.invalid if is_incompatible else None
 
-    # Enhanced remote checking: if package is in local cache, also check remote availability
-    remote_recipe_available = False
-    remote_binary_available = False
-
-    remote_status = 'none'
+    remotes_status: List[PackageRemoteStatus] = []
 
     try:
         # Check each configured remote
         for remote in remotes:
+
+            # Enhanced remote checking: if package is in local cache, also check remote availability
+            remote_recipe_available = False
+            remote_binary_available = False
+            remote_status = "none"
+
             # Check if package exists for this recipe reference
             try:
                 recipe_ref: RecipeReference = RecipeReference(
@@ -293,6 +313,11 @@ def create_package_from_node(node: Node, remotes: List[Remote]) -> ConanPackage:
                 if remote_binary_available:
                     remote_status = "recipe+binary"
 
+            remotes_status.append(PackageRemoteStatus(
+                remote_name=remote.name,
+                status=remote_status
+            ))
+
     except Exception as e:
         print(
             f"Error checking remote availability for {node.ref}: {e}")
@@ -306,18 +331,20 @@ def create_package_from_node(node: Node, remotes: List[Remote]) -> ConanPackage:
         is_incompatible=is_incompatible,
         incompatible_reason=incompatible_reason,
         local_status=local_status,
-        remote_status=remote_status
+        remotes_status=remotes_status
     )
 
     package = ConanPackage(
         name=node.ref.name,
         version=str(node.ref.version),
         ref=str(node.ref),
+        id=node.package_id,
         dependencies=dependencies,
         availability=availability
     )
 
     return package
+
 
 async def parse_conanfile(file_path: str, host_profile: str, build_profile: str, remote_name: Optional[str] = None) -> List[ConanPackage]:
     """Parse conanfile.py and extract packages with optional remote filtering."""
@@ -357,7 +384,7 @@ async def parse_conanfile(file_path: str, host_profile: str, build_profile: str,
             if not is_authenticated(conan_api, remote):
                 print(f"Not authenticated to remote {remote.name}")
                 remotes.remove(remote)
-                
+
         root_node = conan_api.graph.load_graph_consumer(
             file_path, None, None, None, None, profile_host, profile_build, None, remotes=remotes, update=None
         )
@@ -499,7 +526,7 @@ async def install_packages(request: InstallRequest):
             status_code=500, detail="Conan API not initialized")
 
     try:
-        conanfile_path = find_conanfile()
+        conanfile_path = find_conanfile(request.workspace_path)
 
         # Get profiles
         profile_host = conan_api.profiles.get_profile(
@@ -696,97 +723,7 @@ async def add_remote(request: RemoteAddRequest):
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error adding remote: {str(e)}")
-
-
-@app.post("/upload/missing")
-async def upload_missing_packages(request: UploadRequest):
-    """Upload missing packages to remote (synchronous)."""
-    if not conan_api:
-        raise HTTPException(
-            status_code=500, detail="Conan API not initialized")
-
-    try:
-        # Execute upload synchronously
-        result = await upload_packages_task(request)
-        return {"message": "Package upload completed", "status": "completed", "result": result}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
-
-
-async def upload_packages_task(request: UploadRequest):
-    """Background task to upload packages."""
-    try:
-        conanfile_path = find_conanfile()
-
-        # Only support conanfile.py for uploads
-        if conanfile_path != "conanfile.py":
-            raise Exception(
-                "Only conanfile.py is supported for uploads, conanfile.txt found")
-
-        # Load conanfile and get dependencies
-        module, _ = load_python_file(conanfile_path)
-
-        # Find the ConanFile class defined in the module
-        conanfile_class = None
-        for attr in dir(module):
-            obj = getattr(module, attr)
-            if isinstance(obj, type) and issubclass(obj, module.ConanFile) and obj.__name__ != "ConanFile":
-                conanfile_class = obj
-                break
-
-        if not conanfile_class:
-            raise Exception("No ConanFile class found")
-
-        # Get remote
-        remote = conan_api.remotes.get(request.remote_name)
-        remotes = conan_api.remotes.list()
-
-        # Process each package
-        conanfile = conanfile_class()
-
-        # Load specified profiles
-        try:
-            profile_host = conan_api.profiles.get_profile(
-                [request.host_profile], {}, {}, {}, None)
-            profile_build = conan_api.profiles.get_profile(
-                [request.build_profile], {}, {}, {}, None)
-        except Exception as e:
-            print(f"Error loading profiles: {e}")
-            raise Exception(
-                f"Failed to load profiles: host={request.host_profile}, build={request.build_profile}")
-
-        initialize_conanfile_profile(conanfile, profile_build=profile_build,
-                                     profile_host=profile_host, base_context=CONTEXT_BUILD, is_build_require=False)
-
-        # Call requirements to populate .requires
-        if hasattr(conanfile, 'requirements'):
-            conanfile.requirements()
-
-        if hasattr(conanfile, 'requires'):
-            for r in conanfile.requires.values():
-                print(f"Processing package: {r.ref}")
-
-                try:
-                    ref_pattern = ListPattern(str(r.ref), package_id="*")
-                    package_list = conan_api.list.select(
-                        ref_pattern, profile=profile_host)
-
-                    if package_list.recipes:
-                        print(f"Uploading {r.ref}")
-                        conan_api.upload.upload_full(
-                            package_list, remote, remotes, dry_run=False)
-                        print(f"Successfully uploaded {r.ref}")
-                except ConanException as e:
-                    print(f"Failed to upload {r.ref}: {e}")
-                except Exception as e:
-                    print(f"Unexpected error uploading {r.ref}: {e}")
-
-        return {"message": "All packages processed", "status": "completed"}
-
-    except Exception as e:
-        print(f"Upload task failed: {e}")
-        raise Exception(f"Upload task failed: {e}")
-
+    
 
 @app.post("/upload/local")
 async def upload_local_package(request: UploadLocalRequest):
@@ -803,7 +740,7 @@ async def upload_local_package(request: UploadLocalRequest):
         # Check if package exists locally first
         try:
             from conan.api.model import ListPattern
-            ref_pattern = ListPattern(request.package_ref, package_id="*")
+            ref_pattern = ListPattern(request.package_ref, package_id=request.package_id)
 
             # Get specified profiles for listing
             try:

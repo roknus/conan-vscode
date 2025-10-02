@@ -7,16 +7,24 @@ export class ConanRemoteProvider implements vscode.TreeDataProvider<ConanRemoteI
     private _onDidChangeTreeData: vscode.EventEmitter<void> = new vscode.EventEmitter<void>();
     readonly onDidChangeTreeData: vscode.Event<void> = this._onDidChangeTreeData.event;
 
-    constructor(private conanStore: ConanStore) {
-        // Register for server state changes
-        this.conanStore.subscribe(state => state.serverState, () => {
-            this._onDidChangeTreeData.fire();
-        });
+    private disposables: vscode.Disposable[] = [];
 
-        // Register for remotes state changes
-        this.conanStore.subscribe(state => state.remotes, () => {
-            this._onDidChangeTreeData.fire();
-        });
+    constructor(private conanStore: ConanStore) {
+        this.disposables.push(
+            // Register for server state changes
+            this.conanStore.subscribe(state => state.serverState, () => {
+                this._onDidChangeTreeData.fire();
+            }),
+
+            // Register for remotes state changes
+            this.conanStore.subscribe(state => state.remotes, () => {
+                this._onDidChangeTreeData.fire();
+            })
+        );
+    }
+    
+    dispose() {
+        this.disposables.forEach(d => d.dispose());
     }
 
     getTreeItem(element: ConanRemoteItem | vscode.TreeItem): vscode.TreeItem {

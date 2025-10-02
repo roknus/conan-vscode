@@ -1,10 +1,6 @@
 import * as vscode from 'vscode';
 import { getLogger } from './logger';
-
-// Server state enumeration
-export type ServerState = 'starting' | 'running' | 'stopped' | 'error';
-
-export type PackageStatus = 'none' | 'recipe' | 'recipe+binary';
+import { ServerState } from './conan_server_manager';
 
 // Valid item types for package tree items only
 export type PackageItemType =
@@ -17,18 +13,27 @@ export type PackageItemType =
     | 'package-installing'
     | 'package-uploading';
 
+
+export type PackageStatus = 'none' | 'recipe' | 'recipe+binary';
+
+export interface PackageRemoteStatus {
+    remote_name: string;
+    status: PackageStatus;
+}
+
 // TypeScript interfaces for API responses
 export interface PackageAvailability {
     is_incompatible: boolean;
     incompatible_reason?: string;
     local_status: PackageStatus;
-    remote_status: PackageStatus;
+    remotes_status: PackageRemoteStatus[];
 }
 
 export interface PackageInfo {
     name: string;
     version: string;
     ref: string;
+    id: string;
     availability: PackageAvailability;
     dependencies?: PackageInfo[];
 }
@@ -250,17 +255,17 @@ export class ConanStore implements vscode.Disposable {
 
         const savedHostProfile = config.get<Profile | null>('activeHostProfile');
         if (savedHostProfile) {
-            this.state.activeHostProfile = savedHostProfile;
+            this.dispatch({ type: 'SET_PROFILE', payload: { profileType: 'host', profile: savedHostProfile } });
         }
 
         const savedBuildProfile = config.get<Profile | null>('activeBuildProfile');
         if (savedBuildProfile) {
-            this.state.activeBuildProfile = savedBuildProfile;
+            this.dispatch({ type: 'SET_PROFILE', payload: { profileType: 'build', profile: savedBuildProfile } });
         }
 
         const savedRemote = config.get<Remote | AllRemotes>('activeRemote');
         if (savedRemote) {
-            this.state.activeRemote = savedRemote; // URL will be resolved later
+            this.dispatch({ type: 'SET_REMOTE', payload: savedRemote });
         }
     }
 

@@ -1,22 +1,63 @@
 import * as vscode from 'vscode';
-import { ConanStore, PackageInfo, PackageItemType, TaskType } from '../conan_store';
-import { ConanPackageItem } from './conan_package_item';
+import { ConanStore, PackageInfo, PackageItemType, PackageRemoteStatus, Remote, TaskType } from '../conan_store';
+import { ConanPackageItem, } from './conan_package_item';
 import { getLogger } from '../logger';
+
+
+function getPackageRemoteStatus(remotesStatus: PackageRemoteStatus[], activeRemote: Remote | 'all'): string {
+    // If 'all' is selected, return the status with the highest availability
+    if (activeRemote === 'all') {
+        let highestStatus = 'none';
+        for (const status of remotesStatus) {
+            if (status.status === 'recipe+binary') {
+                return 'recipe+binary'; // Highest availability found
+            } else if (status.status === 'recipe' && highestStatus !== 'recipe+binary') {
+                highestStatus = 'recipe'; // Update to recipe if not already at highest
+            }
+        }
+        return highestStatus;
+    } else {
+        for (const status of remotesStatus) {
+            if (status.remote_name === activeRemote.name) {
+                return status.status;
+            }
+        }
+        return 'none'; // Remote not found, assume none
+    }
+}
 
 export class ConanPackageProvider implements vscode.TreeDataProvider<ConanPackageItem | vscode.TreeItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<void> = new vscode.EventEmitter<void>();
     readonly onDidChangeTreeData: vscode.Event<void> = this._onDidChangeTreeData.event;
 
-    constructor(private conanStore: ConanStore) {
-        // Register for state changes
-        this.conanStore.subscribe(state => state.serverState, () => {
-            this._onDidChangeTreeData.fire();
-        });
+    private disposables: vscode.Disposable[] = [];
 
-        // Register for packages state changes
-        this.conanStore.subscribe(state => state.packages, () => {
-            this._onDidChangeTreeData.fire();
-        });
+    constructor(private conanStore: ConanStore) {
+        this.disposables.push(
+            // Register for state changes
+            this.conanStore.subscribe(state => state.serverState, () => {
+                this._onDidChangeTreeData.fire();
+            }),
+
+            // Register for packages state changes
+            this.conanStore.subscribe(state => state.packages, () => {
+                this._onDidChangeTreeData.fire();
+            }),
+
+            // Register for active build profile changes
+            this.conanStore.subscribe(state => state.activeBuildProfile, () => {
+                this._onDidChangeTreeData.fire();
+            }),
+
+            // Register for active host profile changes
+            this.conanStore.subscribe(state => state.activeHostProfile, () => {
+                this._onDidChangeTreeData.fire();
+            })
+        );
+    }
+
+    dispose() {
+        this.disposables.forEach(d => d.dispose());
     }
 
     getTreeItem(element: ConanPackageItem | vscode.TreeItem): vscode.TreeItem {
@@ -128,6 +169,7 @@ export class ConanPackageProvider implements vscode.TreeDataProvider<ConanPackag
 
         return new ConanPackageItem(
             pkg,
+            this.conanStore.activeRemote,
             hasChildren ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None,
             itemType
         );
@@ -157,16 +199,18 @@ export class ConanPackageProvider implements vscode.TreeDataProvider<ConanPackag
         }
 
         const availability = pkg.availability;
+        const remoteStatus = getPackageRemoteStatus(availability.remotes_status, this.conanStore.activeRemote);
 
         if (availability.is_incompatible) {
             return 'package-incompatible';
-        } else if (availability.local_status === 'recipe+binary' && availability.remote_status === 'recipe+binary') {
+        } else if (availability.local_status === 'recipe+binary' && remoteStatus === 'recipe+binary') {
             return 'package-available'; // Package available both remotely and locally
-        } else if (availability.local_status === 'recipe+binary' && availability.remote_status !== 'recipe+binary') {
+        } else if (this.conanStore.activeRemote !== 'all' && availability.local_status === 'recipe+binary' && remoteStatus !== 'recipe+binary') {
+            // Only show uploadable if a specific remote is selected and package otherwise we could not know where to upload
             return 'package-uploadable'; // Package available for upload
-        } else if (availability.remote_status === 'recipe+binary' && availability.local_status !== 'recipe+binary') {
+        } else if (remoteStatus === 'recipe+binary' && availability.local_status !== 'recipe+binary') {
             return 'package-downloadable'; // Package available for download
-        } else if (availability.local_status === 'recipe' || availability.remote_status === 'recipe') {
+        } else if (availability.local_status === 'recipe' || remoteStatus === 'recipe') {
             return 'package-buildable'; // Recipe available, can build locally
         } else {
             return 'package-unknown';
