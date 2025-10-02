@@ -78,12 +78,6 @@
         "icon": "$(refresh)"
       },
       {
-        "command": "conan.uploadMissingPackages",
-        "title": "Upload Missing Packages",
-        "category": "Conan",
-        "icon": "$(cloud-upload)"
-      },
-      {
         "command": "conan.uploadLocalPackage",
         "title": "Upload to Remote",
         "category": "Conan",
@@ -132,19 +126,19 @@
           "id": "conan.packages",
           "icon": "$(package)",
           "name": "Packages",
-          "when": "workspaceHasConanfile"
+          "when": "conanBackendReady"
         },
         {
           "id": "conan.profiles",
           "icon": "$(person)",
           "name": "Profiles",
-          "when": "workspaceHasConanfile"
+          "when": "conanBackendReady"
         },
         {
           "id": "conan.remotes",
           "icon": "$(globe)",
           "name": "Remotes",
-          "when": "workspaceHasConanfile"
+          "when": "conanBackendReady"
         }
       ]
     },
@@ -154,7 +148,7 @@
           "id": "conan-explorer",
           "title": "Conan",
           "icon": "$(package)",
-          "when": "workspaceHasConanfile"
+          "when": "conanBackendReady"
         }
       ]
     },
@@ -211,39 +205,35 @@
       "commandPalette": [
         {
           "command": "conan.installPackages",
-          "when": "workspaceHasConanfile"
+          "when": "conanBackendReady"
         },
         {
           "command": "conan.createProfile",
-          "when": "workspaceHasConanfile"
+          "when": "conanBackendReady"
         },
         {
           "command": "conan.addRemote",
-          "when": "workspaceHasConanfile"
-        },
-        {
-          "command": "conan.uploadMissingPackages",
-          "when": "workspaceHasConanfile"
+          "when": "conanBackendReady"
         },
         {
           "command": "conan.startServer",
-          "when": "workspaceHasConanfile"
+          "when": "conanBackendReady"
         },
         {
           "command": "conan.stopServer",
-          "when": "workspaceHasConanfile"
+          "when": "conanBackendReady"
         },
         {
           "command": "conan.selectHostProfile",
-          "when": "workspaceHasConanfile"
+          "when": "conanBackendReady"
         },
         {
           "command": "conan.selectBuildProfile",
-          "when": "workspaceHasConanfile"
+          "when": "conanBackendReady"
         },
         {
           "command": "conan.selectRemote",
-          "when": "workspaceHasConanfile"
+          "when": "conanBackendReady"
         }
       ]
     },
@@ -251,7 +241,7 @@
       {
         "command": "conan.openWebview",
         "key": "ctrl+shift+c ctrl+shift+m",
-        "when": "workspaceHasConanfile"
+        "when": "conanBackendReady"
       }
     ],
     "configuration": {

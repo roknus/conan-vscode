@@ -4,35 +4,48 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
 import { PythonExtension } from '@vscode/python-extension';
-import { ConanStore, ServerState } from './conan_store';
 import { getLogger } from './logger';
 
 // Server configuration
 const SERVER_HOST = '127.0.0.1';
 
+// Server state enumeration
+export type ServerState = 'starting' | 'running' | 'stopped' | 'error';
+
 // Server state management
-export class ConanServerManager {
+export class ConanServerManager implements vscode.Disposable {
     private serverProcess: cp.ChildProcess | null = null;
     private pythonApi: PythonExtension | null = null;
     private venvPath: string | null = null;
     private serverPort: number = 0;
     public backendUrl: string | null = null;
-    private conanStore: ConanStore | null = null;
 
-    constructor(store: ConanStore, backendUrl?: string) {
-        this.conanStore = store;
+    private extensionPath: string;
+    private _state: ServerState = 'stopped';
+    private _onStateChange = new vscode.EventEmitter<ServerState>();
+    public readonly onStateChange = this._onStateChange.event;
+
+
+    get state(): ServerState {
+        return this._state;
+    }
+
+    constructor(extensionPath: string, backendUrl?: string) {
+        this.extensionPath = extensionPath;
         if (backendUrl) {
             this.backendUrl = backendUrl;
             this.logger.info(`Using external backend server: ${backendUrl}`);
         }
     }
 
+    dispose(): void {
+        this.stopServer();
+    }
+
     // Notify store of state change
     private notifyStateChange(newState: ServerState): void {
         this.logger.info(`Server state changed to: ${newState}`);
-        if (this.conanStore) {
-            this.conanStore.setServerState(newState);
-        }
+        this._onStateChange.fire(newState);
     }
 
     private async setupVirtualEnvironment(extensionPath: string, basePythonPath: string): Promise<string | null> {
@@ -171,21 +184,19 @@ export class ConanServerManager {
         }
     }
 
-    async startServer(workspacePath: string, extensionPath: string): Promise<boolean> {
-        const currentState = this.getServerState();
-        
-        if (currentState === 'running') {
+    async startServer(): Promise<boolean> {
+
+        if (this._state === 'running') {
             return true;
         }
 
-        if (currentState === 'starting') {
+        if (this._state === 'starting') {
             // Already starting, wait for completion
             return new Promise((resolve) => {
                 const checkState = () => {
-                    const state = this.getServerState();
-                    if (state === 'running') {
+                    if (this._state === 'running') {
                         resolve(true);
-                    } else if (state === 'error' || state === 'stopped') {
+                    } else if (this._state === 'error' || this._state === 'stopped') {
                         resolve(false);
                     } else {
                         setTimeout(checkState, 500);
@@ -203,7 +214,7 @@ export class ConanServerManager {
         }
 
         // Start our own server
-        return await this.startOwnServer(workspacePath, extensionPath);
+        return await this.startOwnServer(this.extensionPath);
     }
 
     async connectToServer(): Promise<boolean> {
@@ -233,7 +244,7 @@ export class ConanServerManager {
         }
     }
 
-    private async startOwnServer(workspacePath: string, extensionPath: string): Promise<boolean> {
+    private async startOwnServer(extensionPath: string): Promise<boolean> {
         try {
             this.pythonApi = await PythonExtension.api();
 
@@ -279,7 +290,6 @@ export class ConanServerManager {
                 '--host', SERVER_HOST,
                 '--port', '0'  // Let server choose any available port
             ], {
-                cwd: workspacePath,
                 stdio: 'pipe',
                 env: { ...process.env }
             });
@@ -408,18 +418,9 @@ export class ConanServerManager {
         });
     }
 
-    getServerState(): ServerState {
-        return this.conanStore?.getServerState() || 'stopped';
-    }
-
-    // Backward compatibility method
-    getServerRunning(): boolean {
-        return this.getServerState() === 'running';
-    }
-
     // Method to mark server as running (useful when detecting existing server)
     setServerRunning(running: boolean): void {
-        this.notifyStateChange(running ? 'running' : 'stopped');
+        this._onStateChange.fire(running ? 'running' : 'stopped');
     }
 
     // Get the virtual environment path if available

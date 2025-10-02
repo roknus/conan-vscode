@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ConanStore } from '../conan_store';
 import { ConanProfileItem } from './conan_profile_item';
 import { getLogger } from '../logger';
+import { ConanPackageItem } from './conan_package_item';
 
 class ProfileSectionItem extends vscode.TreeItem {
     constructor(label: string, isLocalSection: boolean) {
@@ -11,20 +12,53 @@ class ProfileSectionItem extends vscode.TreeItem {
     }
 }
 
+async function openProfileFile(item?: ConanPackageItem | ConanProfileItem): Promise<void> {
+    let resourceUri: vscode.Uri | undefined;
+
+    if (item instanceof ConanProfileItem) {
+        resourceUri = item.resourceUri;
+    } else if (item && item.resourceUri) {
+        resourceUri = item.resourceUri;
+    }
+
+    if (!resourceUri) {
+        vscode.window.showErrorMessage('No profile file selected');
+        return;
+    }
+
+    try {
+        await vscode.commands.executeCommand('vscode.open', resourceUri);
+    } catch (error) {
+        vscode.window.showErrorMessage(`Failed to open profile file: ${error}`);
+    }
+}
+
 export class ConanProfileProvider implements vscode.TreeDataProvider<ConanProfileItem | ProfileSectionItem | vscode.TreeItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<void> = new vscode.EventEmitter<void>();
     readonly onDidChangeTreeData: vscode.Event<void> = this._onDidChangeTreeData.event;
 
+    private disposables: vscode.Disposable[] = [];
+
     constructor(private conanStore: ConanStore) {
-        // Register for server state changes
-        this.conanStore.subscribe(state => state.serverState, () => {
-            this._onDidChangeTreeData.fire();
-        });
-        
-        // Register for profiles state changes
-        this.conanStore.subscribe(state => state.profiles, () => {
-            this._onDidChangeTreeData.fire();
-        });
+        this.disposables.push(
+            // Register for server state changes
+            this.conanStore.subscribe(state => state.serverState, () => {
+                this._onDidChangeTreeData.fire();
+            }),
+
+            // Register for profiles state changes
+            this.conanStore.subscribe(state => state.profiles, () => {
+                this._onDidChangeTreeData.fire();
+            }),
+
+            vscode.commands.registerCommand('conan.openProfileFile', (item?: ConanPackageItem | ConanProfileItem) => {
+                openProfileFile(item);
+            })
+        );
+    }
+
+    dispose() {
+        this.disposables.forEach(d => d.dispose());
     }
 
     getTreeItem(element: ConanProfileItem | ProfileSectionItem | vscode.TreeItem): vscode.TreeItem {

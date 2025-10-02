@@ -1,6 +1,6 @@
 import * as http from 'http';
 import { ConanServerManager } from './conan_server_manager';
-import { PackageInfo, Profile, Remote, AllRemotes } from './conan_store';
+import { PackageInfo, Profile, Remote } from './conan_store';
 
 // HTTP client for server communication
 export class ConanApiClient {
@@ -93,8 +93,9 @@ export class ConanApiClient {
         });
     }
 
-    async installPackage(packageRef: string, buildMissing: boolean = true, hostProfile: string, buildProfile: string, force: boolean = false): Promise<any> {
+    async installPackage(workspacePath: string, packageRef: string, buildMissing: boolean = true, hostProfile: string, buildProfile: string, force: boolean = false): Promise<any> {
         return this.makeRequest('/install/package', 'POST', {
+            workspace_path: workspacePath,
             package_ref: packageRef,
             build_missing: buildMissing,
             host_profile: hostProfile,
@@ -120,20 +121,11 @@ export class ConanApiClient {
         });
     }
 
-    async uploadMissingPackages(workspacePath: string, remoteName: string, hostProfile: string, buildProfile: string, packages: string[] = [], force: boolean = false): Promise<any> {
-        return this.makeRequest('/upload/missing', 'POST', {
-            workspace_path: workspacePath,
-            remote_name: remoteName,
-            packages: packages,
-            host_profile: hostProfile,
-            build_profile: buildProfile,
-            force: force
-        });
-    }
-
-    async uploadLocalPackage(packageRef: string, remoteName: string, hostProfile: string, force: boolean = false): Promise<any> {
+    async uploadLocalPackage(workspacePath: string, packageRef: string, packageId: string, remoteName: string, hostProfile: string, force: boolean = false): Promise<any> {
         return this.makeRequest('/upload/local', 'POST', {
+            workspace_path: workspacePath,
             package_ref: packageRef,
+            package_id: packageId,
             remote_name: remoteName,
             host_profile: hostProfile,
             force: force
