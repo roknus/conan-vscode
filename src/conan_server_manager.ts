@@ -18,8 +18,10 @@ export class ConanServerManager {
     private serverPort: number = 0;
     public backendUrl: string | null = null;
     private conanStore: ConanStore | null = null;
+    private extensionPath: string;
 
-    constructor(store: ConanStore, backendUrl?: string) {
+    constructor(extensionPath: string, store: ConanStore, backendUrl?: string) {
+        this.extensionPath = extensionPath;
         this.conanStore = store;
         if (backendUrl) {
             this.backendUrl = backendUrl;
@@ -171,7 +173,7 @@ export class ConanServerManager {
         }
     }
 
-    async startServer(workspacePath: string, extensionPath: string): Promise<boolean> {
+    async startServer(workspacePath: string): Promise<boolean> {
         const currentState = this.getServerState();
         
         if (currentState === 'running') {
@@ -203,7 +205,7 @@ export class ConanServerManager {
         }
 
         // Start our own server
-        return await this.startOwnServer(workspacePath, extensionPath);
+        return await this.startOwnServer(workspacePath, this.extensionPath);
     }
 
     async connectToServer(): Promise<boolean> {
