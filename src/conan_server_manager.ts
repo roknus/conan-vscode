@@ -306,7 +306,7 @@ export class ConanServerManager implements vscode.Disposable {
                 this.serverProcess!.stdout?.on('data', (data) => {
                     const output = data.toString();
                     if (this.logger) {
-                        this.logger.debug(`Conan Server stdout: ${output.trim()}`);
+                        this.logger.debug(`Conan Server: ${output.trim()}`);
                     }
 
                     // Look for port information
@@ -322,7 +322,7 @@ export class ConanServerManager implements vscode.Disposable {
 
             this.serverProcess.stderr?.on('data', (data) => {
                 if (this.logger) {
-                    this.logger.error(`Conan Server stderr: ${data.toString().trim()}`);
+                    this.logger.info(`Conan Server: ${data.toString().trim()}`);
                 }
             });
 

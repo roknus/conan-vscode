@@ -5,10 +5,11 @@ This module contains utility classes for Conan authentication and API management
 
 try:
     from conan.api.conan_api import ConanAPI
-    from conan.internal.conan_app import ConanBasicApp
+    from conan.internal.conan_app import ConanApp
     from conan.internal.rest.rest_client import RestApiClient
     from conan.internal.api.remotes.localdb import LocalDB
     from conan.internal.errors import AuthenticationException, NotFoundException, ForbiddenException
+    from conan.api.model import Remote
     from conan.api.output import ConanOutput
 except ImportError:
     print("ERROR: Conan Python API not found. Make sure Conan 2.x is installed.")
@@ -69,7 +70,7 @@ class VSCodeConanApiAuthManager:
         return True
 
 
-def is_authenticated(conan_api: ConanAPI, remote) -> bool:
+def is_authenticated(conan_api: ConanAPI, remote: Remote) -> bool:
     """
     Convenience function to check if user is authenticated to a remote.
     
@@ -80,11 +81,10 @@ def is_authenticated(conan_api: ConanAPI, remote) -> bool:
     Returns:
         bool: True if authenticated, False otherwise
     """
-    app = ConanBasicApp(conan_api)
     auth = VSCodeConanApiAuthManager(
-        conan_api.remotes.requester, 
-        app.cache_folder, 
-        LocalDB(app.cache_folder), 
-        app._global_conf
+        conan_api._api_helpers.requester, 
+        conan_api.home_folder, 
+        LocalDB(conan_api.home_folder), 
+        conan_api._api_helpers.global_conf
     )
     return auth.is_authenticated(remote)
