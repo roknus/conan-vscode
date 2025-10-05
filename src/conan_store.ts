@@ -46,12 +46,31 @@ export interface Profile {
     isLocal: boolean; // Whether this is a local profile (workspace-specific) vs global
 }
 
+function isValidProfile(value: any): value is Profile {
+    return value !== null &&
+        typeof value === 'object' &&
+        typeof value.name === 'string' &&
+        typeof value.path === 'string' &&
+        typeof value.isLocal === 'boolean';
+}
+
 export interface Remote {
     name: string;
     url: string;
 }
 
 export type AllRemotes = 'all';
+
+function isValidRemote(value: any): value is Remote {
+    return value !== null &&
+           typeof value === 'object' &&
+           typeof value.name === 'string' &&
+           typeof value.url === 'string';
+}
+
+function isValidActiveRemote(value: any): value is Remote | AllRemotes {
+    return value === 'all' || isValidRemote(value);
+}
 
 // Task management types
 export enum TaskType {
@@ -254,17 +273,17 @@ export class ConanStore implements vscode.Disposable {
         const config = vscode.workspace.getConfiguration('conan');
 
         const savedHostProfile = config.get<Profile | null>('activeHostProfile');
-        if (savedHostProfile) {
+        if (savedHostProfile !== undefined && savedHostProfile !== null && isValidProfile(savedHostProfile)) {
             this.dispatch({ type: 'SET_PROFILE', payload: { profileType: 'host', profile: savedHostProfile } });
         }
 
         const savedBuildProfile = config.get<Profile | null>('activeBuildProfile');
-        if (savedBuildProfile) {
+        if (savedBuildProfile !== undefined && savedBuildProfile !== null && isValidProfile(savedBuildProfile)) {
             this.dispatch({ type: 'SET_PROFILE', payload: { profileType: 'build', profile: savedBuildProfile } });
         }
 
         const savedRemote = config.get<Remote | AllRemotes>('activeRemote');
-        if (savedRemote) {
+        if (savedRemote !== undefined && savedRemote !== null && isValidActiveRemote(savedRemote)) {
             this.dispatch({ type: 'SET_REMOTE', payload: savedRemote });
         }
     }
