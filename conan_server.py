@@ -50,6 +50,7 @@ async def lifespan(app: FastAPI):
     global conan_api
     try:
         conan_api = ConanAPI()
+        conan_api._api_helpers.set_core_confs(["core:non_interactive=True"])
         print("Conan API initialized successfully")
     except Exception as e:
         print(f"Failed to initialize Conan API: {e}")
