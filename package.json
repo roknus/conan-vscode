@@ -54,12 +54,6 @@
         "icon": "$(add)"
       },
       {
-        "command": "conan.addRemote",
-        "title": "Add Remote",
-        "category": "Conan",
-        "icon": "$(globe)"
-      },
-      {
         "command": "conan.refreshPackages",
         "title": "Refresh Packages",
         "category": "Conan",
@@ -108,16 +102,34 @@
         "icon": "$(tools)"
       },
       {
+        "command": "conan.openProfileFile",
+        "title": "Open File",
+        "category": "Conan",
+        "icon": "$(go-to-file)"
+      },
+      {
         "command": "conan.selectRemote",
         "title": "Select Active Remote",
         "category": "Conan",
         "icon": "$(globe)"
       },
       {
-        "command": "conan.openProfileFile",
-        "title": "Open File",
+        "command": "conan.addRemote",
+        "title": "Add Remote",
         "category": "Conan",
-        "icon": "$(go-to-file)"
+        "icon": "$(add)"
+      },
+      {
+        "command": "conan.loginRemote",
+        "title": "Login to Remote",
+        "category": "Conan",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "conan.removeRemote",
+        "title": "Remove Remote",
+        "category": "Conan",
+        "icon": "$(globe)"
       }
     ],
     "views": {
@@ -199,6 +211,16 @@
         {
           "command": "conan.openProfileFile",
           "when": "view == conan.profiles && viewItem == profile",
+          "group": "navigation"
+        },
+        {
+          "command": "conan.loginRemote",
+          "when": "view == conan.remotes && viewItem == remote-login-required",
+          "group": "inline"
+        },
+        {
+          "command": "conan.removeRemote",
+          "when": "view == conan.remotes",
           "group": "navigation"
         }
       ],

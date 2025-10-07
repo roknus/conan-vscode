@@ -22,7 +22,7 @@ export class ConanRemoteProvider implements vscode.TreeDataProvider<ConanRemoteI
             })
         );
     }
-    
+
     dispose() {
         this.disposables.forEach(d => d.dispose());
     }
@@ -63,7 +63,7 @@ export class ConanRemoteProvider implements vscode.TreeDataProvider<ConanRemoteI
                         item.description = '';
                         return [item];
                     }
-                    return remotes.map(remote => new ConanRemoteItem({ name: remote.name, url: remote.url }));
+                    return remotes.map(remote => new ConanRemoteItem(remote));
                 } catch (error) {
                     getLogger().warn('Remote API request failed:', error);
                     const item = new vscode.TreeItem(`API Error: ${error}`, vscode.TreeItemCollapsibleState.None);

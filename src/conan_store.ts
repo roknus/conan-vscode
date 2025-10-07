@@ -57,6 +57,7 @@ function isValidProfile(value: any): value is Profile {
 export interface Remote {
     name: string;
     url: string;
+    requires_auth: boolean;
 }
 
 export type AllRemotes = 'all';
