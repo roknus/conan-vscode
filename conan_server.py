@@ -126,6 +126,7 @@ class ConanRemote(BaseModel):
     name: str
     url: str
     verify_ssl: bool = True
+    requires_auth: bool = False
 
 
 class UploadRequest(BaseModel):
@@ -173,6 +174,14 @@ class RemoteAddRequest(BaseModel):
     name: str
     url: str
     verify_ssl: bool = True
+
+class RemoteLoginRequest(BaseModel):
+    name: str
+    user: str
+    password: str
+
+class RemoveRemoteRequest(BaseModel):
+    name: str
 
 
 # Global variables
@@ -495,30 +504,6 @@ async def get_profiles(local_profiles_path: Optional[str] = None) -> List[ConanP
             status_code=500, detail=f"Error getting profiles: {str(e)}")
 
 
-@app.get("/remotes")
-async def get_remotes() -> List[ConanRemote]:
-    """Get configured Conan remotes."""
-    if not conan_api:
-        raise HTTPException(
-            status_code=500, detail="Conan API not initialized")
-
-    try:
-        remotes_list = conan_api.remotes.list()
-        remotes = []
-
-        for remote in remotes_list:
-            remotes.append(ConanRemote(
-                name=remote.name,
-                url=remote.url,
-                verify_ssl=remote.verify_ssl
-            ))
-
-        return remotes
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error getting remotes: {str(e)}")
-
-
 @app.post("/install")
 async def install_packages(request: InstallRequest):
     """Install packages from conanfile."""
@@ -701,6 +686,34 @@ async def create_profile(request: ProfileCreateRequest):
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error creating profile: {str(e)}")
+    
+
+@app.get("/remotes")
+async def get_remotes() -> List[ConanRemote]:
+    """Get configured Conan remotes."""
+    if not conan_api:
+        raise HTTPException(
+            status_code=500, detail="Conan API not initialized")
+
+    try:
+        remotes_list = conan_api.remotes.list()
+        remotes = []
+
+        for remote in remotes_list:
+            # Check if authentication is required for this remote
+            requires_auth = not is_authenticated(conan_api, remote)
+
+            remotes.append(ConanRemote(
+                name=remote.name,
+                url=remote.url,
+                verify_ssl=remote.verify_ssl,
+                requires_auth=requires_auth
+            ))
+
+        return remotes
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error getting remotes: {str(e)}")
 
 
 @app.post("/remotes/add")
@@ -711,19 +724,58 @@ async def add_remote(request: RemoteAddRequest):
             status_code=500, detail="Conan API not initialized")
 
     try:
-        # Use Conan API to add remote
-        from conan.api.model import Remote
-
         # Create a new remote object
         new_remote = Remote(request.name, request.url, request.verify_ssl)
 
         # Add the remote using the API
         conan_api.remotes.add(new_remote)
 
-        return {"message": f"Remote '{request.name}' added successfully", "url": request.url}
+        # Check if authentication is required for this remote
+        requires_auth = not is_authenticated(conan_api, new_remote)
+
+        return {"success": True, "requires_auth": requires_auth}
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error adding remote: {str(e)}")
+    
+    
+@app.post("/remotes/login")
+async def login_remote(request: RemoteLoginRequest):
+    """Login to a Conan remote."""
+    if not conan_api:
+        raise HTTPException(
+            status_code=500, detail="Conan API not initialized")
+
+    try:
+        # Get the remote
+        remote = conan_api.remotes.get(request.name)
+        if not remote:
+            raise HTTPException(
+                status_code=404, detail=f"Remote '{request.name}' not found")
+
+        # Perform login
+        conan_api.remotes.login(remote, request.user, request.password)
+
+        return {"success": True, "message": f"Logged in to remote '{request.name}' successfully"}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error logging in to remote: {str(e)}")
+    
+@app.post("/remotes/remove")
+async def remove_remote(request: RemoveRemoteRequest):
+    """Remove a Conan remote."""
+    if not conan_api:
+        raise HTTPException(
+            status_code=500, detail="Conan API not initialized")
+
+    try:
+        # Remove the remote using the API
+        conan_api.remotes.remove(request.name)
+
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error removing remote: {str(e)}")
     
 
 @app.post("/upload/local")

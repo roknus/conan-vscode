@@ -2,7 +2,6 @@ import * as vscode from 'vscode';
 import { ConanStore } from '../conan_store';
 import { ConanProfileItem } from './conan_profile_item';
 import { getLogger } from '../logger';
-import { ConanPackageItem } from './conan_package_item';
 
 class ProfileSectionItem extends vscode.TreeItem {
     constructor(label: string, isLocalSection: boolean) {
@@ -12,22 +11,15 @@ class ProfileSectionItem extends vscode.TreeItem {
     }
 }
 
-async function openProfileFile(item?: ConanPackageItem | ConanProfileItem): Promise<void> {
-    let resourceUri: vscode.Uri | undefined;
+async function openProfileFile(item?: ConanProfileItem): Promise<void> {
 
-    if (item instanceof ConanProfileItem) {
-        resourceUri = item.resourceUri;
-    } else if (item && item.resourceUri) {
-        resourceUri = item.resourceUri;
-    }
-
-    if (!resourceUri) {
+    if (!item) {
         vscode.window.showErrorMessage('No profile file selected');
         return;
     }
 
     try {
-        await vscode.commands.executeCommand('vscode.open', resourceUri);
+        await vscode.commands.executeCommand('vscode.open', item.resourceUri);
     } catch (error) {
         vscode.window.showErrorMessage(`Failed to open profile file: ${error}`);
     }
@@ -51,7 +43,7 @@ export class ConanProfileProvider implements vscode.TreeDataProvider<ConanProfil
                 this._onDidChangeTreeData.fire();
             }),
 
-            vscode.commands.registerCommand('conan.openProfileFile', (item?: ConanPackageItem | ConanProfileItem) => {
+            vscode.commands.registerCommand('conan.openProfileFile', (item?: ConanProfileItem) => {
                 openProfileFile(item);
             })
         );

@@ -2,6 +2,11 @@ import * as http from 'http';
 import { ConanServerManager } from './conan_server_manager';
 import { PackageInfo, Profile, Remote } from './conan_store';
 
+interface AddRemoteResponse {
+    success: boolean;
+    requires_auth: boolean;
+}
+
 // HTTP client for server communication
 export class ConanApiClient {
     constructor(private serverManager: ConanServerManager) { }
@@ -76,10 +81,6 @@ export class ConanApiClient {
         return this.makeRequest(url);
     }
 
-    async getRemotes(): Promise<Remote[]> {
-        return this.makeRequest('/remotes');
-    }
-
     async getSettings(): Promise<any> {
         return this.makeRequest('/settings');
     }
@@ -113,13 +114,30 @@ export class ConanApiClient {
         });
     }
 
-    async addRemote(name: string, url: string): Promise<any> {
+    async getRemotes(): Promise<Remote[]> {
+        return this.makeRequest('/remotes');
+    }
+
+    async addRemote(name: string, url: string): Promise<AddRemoteResponse> {
         return this.makeRequest('/remotes/add', 'POST', {
             name: name,
             url: url,
             verify_ssl: true
         });
     }
+
+    async loginRemote(name: string, user: string, password: string): Promise<any> {
+        return this.makeRequest('/remotes/login', 'POST', {
+            name: name,
+            user: user,
+            password: password
+        });
+    }
+
+    async removeRemote(name: string): Promise<any> {
+        return this.makeRequest('/remotes/remove', 'POST', { name: name });
+    }
+
 
     async uploadLocalPackage(workspacePath: string, packageRef: string, packageId: string, remoteName: string, hostProfile: string, force: boolean = false): Promise<any> {
         return this.makeRequest('/upload/local', 'POST', {

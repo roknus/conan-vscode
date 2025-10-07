@@ -11,18 +11,21 @@ import {
     installAllPackages,
     installSinglePackage,
     createProfile,
-    addRemote,
     uploadLocalPackage,
     refreshPackages,
     refreshProfiles,
     refreshRemotes,
-    selectProfile,
-    selectRemote
-} from './commands';
+    selectProfile
+} from './commands/commands';
 import { ProfileStatusBar } from './conan_profile_status_bar';
 import { getLogger } from './logger';
 import { RemoteStatusBar } from './conan_remote_status_bar';
 import { ProfileFolderChangeEvent, ProfileFolderWatcher } from './services/profile_folder_watcher';
+import { addRemote } from './commands/remotes/add_remote';
+import { ConanRemoteItem } from './tree_data_providers/conan_remote_item';
+import { removeRemote } from './commands/remotes/remove_remote';
+import { selectRemote } from './commands/remotes/select_remote';
+import { loginRemote } from './commands/remotes/login_remote';
 /**
  * Register extension commands
  */
@@ -51,6 +54,18 @@ function registerCommands(conanStore: ConanStore, apiClient: ConanApiClient): vs
         vscode.commands.registerCommand('conan.addRemote', () => {
             if (conanStore && apiClient) {
                 addRemote(conanStore, apiClient);
+            }
+        }),
+
+        vscode.commands.registerCommand('conan.loginRemote', (item?: ConanRemoteItem) => {
+            if (item && apiClient) {
+                loginRemote(item.remote.name, apiClient);
+            }
+        }),
+
+        vscode.commands.registerCommand('conan.removeRemote', (item?: ConanRemoteItem) => {
+            if (item && apiClient) {
+                removeRemote(item.remote.name, apiClient);
             }
         }),
 
