@@ -33,23 +33,41 @@ const copyFilesPlugin = {
 	name: 'copy-files',
 	setup(build) {
 		build.onEnd(() => {
-			// Copy Python files to dist directory
-			try {
-				if (!fs.existsSync('dist')) {
-					fs.mkdirSync('dist');
+			const fs = require('fs');
+			const path = require('path');
+			
+			// Copy Python files from backend directory to dist directory
+			const filesToCopy = [
+				'backend/conan_server.py',
+				'backend/conan_utils.py',
+				'backend/models/__init__.py',
+				'backend/models/conan_models.py',
+				'backend/dependencies/__init__.py',
+				'backend/dependencies/conan_deps.py',
+				'backend/routes/__init__.py',
+				'backend/routes/packages.py',
+				'backend/routes/profiles.py',
+				'backend/routes/remotes.py',
+				'backend/routes/config.py'
+			];
+			
+			filesToCopy.forEach(file => {
+				const srcPath = path.join(__dirname, file);
+				const destPath = path.join(__dirname, 'dist', file);
+				
+				// Create directory if it doesn't exist
+				const destDir = path.dirname(destPath);
+				if (!fs.existsSync(destDir)) {
+					fs.mkdirSync(destDir, { recursive: true });
 				}
 				
-				// Copy server script
-				fs.copyFileSync('conan_server.py', 'dist/conan_server.py');
-				console.log('Copied conan_server.py to dist/');
-				
-				// Copy utility modules
-				fs.copyFileSync('conan_utils.py', 'dist/conan_utils.py');
-				console.log('Copied conan_utils.py to dist/');
-				
-			} catch (error) {
-				console.warn('Warning: Could not copy Python files:', error.message);
-			}
+				if (fs.existsSync(srcPath)) {
+					fs.copyFileSync(srcPath, destPath);
+					console.log(`Copied ${file} to dist/`);
+				} else {
+					console.warn(`Warning: ${file} not found`);
+				}
+			});
 		});
 	},
 };

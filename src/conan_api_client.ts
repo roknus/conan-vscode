@@ -63,6 +63,14 @@ export class ConanApiClient {
         });
     }
 
+    async getSettings(): Promise<any> {
+        return this.makeRequest('/settings');
+    }
+
+    async getConanHome(): Promise<string> {
+        return this.makeRequest('/config/home');
+    }
+
     async getPackages(workspacePath: string, hostProfile: string, buildProfile: string, remoteName?: string): Promise<PackageInfo[]> {
         let url = `/packages?workspace_path=${encodeURIComponent(workspacePath)}&host_profile=${encodeURIComponent(hostProfile)}&build_profile=${encodeURIComponent(buildProfile)}`;
 
@@ -73,20 +81,8 @@ export class ConanApiClient {
         return this.makeRequest(url);
     }
 
-    async getProfiles(localProfilesPath?: string): Promise<Profile[]> {
-        let url = '/profiles';
-        if (localProfilesPath) {
-            url += `?local_profiles_path=${encodeURIComponent(localProfilesPath)}`;
-        }
-        return this.makeRequest(url);
-    }
-
-    async getSettings(): Promise<any> {
-        return this.makeRequest('/settings');
-    }
-
     async installPackages(workspacePath: string, buildMissing: boolean = true, hostProfile: string, buildProfile: string): Promise<any> {
-        return this.makeRequest('/install', 'POST', {
+        return this.makeRequest('/packages/install', 'POST', {
             workspace_path: workspacePath,
             build_missing: buildMissing,
             host_profile: hostProfile,
@@ -95,7 +91,7 @@ export class ConanApiClient {
     }
 
     async installPackage(workspacePath: string, packageRef: string, buildMissing: boolean = true, hostProfile: string, buildProfile: string, force: boolean = false): Promise<any> {
-        return this.makeRequest('/install/package', 'POST', {
+        return this.makeRequest('/packages/install/package', 'POST', {
             workspace_path: workspacePath,
             package_ref: packageRef,
             build_missing: buildMissing,
@@ -103,6 +99,25 @@ export class ConanApiClient {
             build_profile: buildProfile,
             force: force
         });
+    }
+
+    async uploadLocalPackage(workspacePath: string, packageRef: string, packageId: string, remoteName: string, hostProfile: string, force: boolean = false): Promise<any> {
+        return this.makeRequest('/packages/upload/local', 'POST', {
+            workspace_path: workspacePath,
+            package_ref: packageRef,
+            package_id: packageId,
+            remote_name: remoteName,
+            host_profile: hostProfile,
+            force: force
+        });
+    }
+
+    async getProfiles(localProfilesPath?: string): Promise<Profile[]> {
+        let url = '/profiles';
+        if (localProfilesPath) {
+            url += `?local_profiles_path=${encodeURIComponent(localProfilesPath)}`;
+        }
+        return this.makeRequest(url);
     }
 
     async createProfile(name: string, settings?: { [key: string]: string | null }, localProfilesPath?: string): Promise<any> {
@@ -136,25 +151,5 @@ export class ConanApiClient {
 
     async removeRemote(name: string): Promise<any> {
         return this.makeRequest('/remotes/remove', 'POST', { name: name });
-    }
-
-
-    async uploadLocalPackage(workspacePath: string, packageRef: string, packageId: string, remoteName: string, hostProfile: string, force: boolean = false): Promise<any> {
-        return this.makeRequest('/upload/local', 'POST', {
-            workspace_path: workspacePath,
-            package_ref: packageRef,
-            package_id: packageId,
-            remote_name: remoteName,
-            host_profile: hostProfile,
-            force: force
-        });
-    }
-
-    async getUploadStatus(): Promise<any> {
-        return this.makeRequest('/upload/status');
-    }
-
-    async getConanHome(): Promise<string> {
-        return this.makeRequest('/config/home');
     }
 }
