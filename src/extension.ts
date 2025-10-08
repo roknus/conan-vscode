@@ -22,7 +22,7 @@ async function stopBackend(serverManager: ConanServerManager): Promise<void> {
 /* 
     * Start the extension functionality
 */
-async function startBackend(serverManager: ConanServerManager) {
+async function startBackend(workspace_path: string, serverManager: ConanServerManager) {
 
     let serverConnected: Promise<boolean>;
     // Connect to external server or start our own
@@ -32,7 +32,7 @@ async function startBackend(serverManager: ConanServerManager) {
         serverConnected = serverManager.connectToServer();
     } else {
         // Start our own embedded server
-        serverConnected = serverManager.startServer();
+        serverConnected = serverManager.startServer(workspace_path);
     }
 
     // Update the context for UI visibility
@@ -59,7 +59,7 @@ function createConanProject(workspaceRoot: string, serverManager: ConanServerMan
             logger.info('🎉 Conanfile detected! Initializing extension...');
             const conanfileInfo = detectConanfiles(workspaceRoot);
 
-            await startBackend(serverManager);
+            await startBackend(workspaceRoot, serverManager);
 
             conanProject.activate();
 
@@ -95,31 +95,13 @@ function createConanProject(workspaceRoot: string, serverManager: ConanServerMan
         // Start extension if conanfile already exists
         const conanfileInfo = detectConanfiles(workspaceRoot);
         if (conanfileInfo.hasAnyConanfile) {
-            await startBackend(serverManager);
+            await startBackend(workspaceRoot, serverManager);
 
             conanProject.activate();
         }
     })();
 
     return vscode.Disposable.from(...disposables);
-}
-
-/**
- * Register extension commands
- */
-function registerCommands(serverManager: ConanServerManager): vscode.Disposable {
-
-    // Register commands
-    return vscode.Disposable.from(
-
-        vscode.commands.registerCommand('conan.startServer', () => {
-            startBackend(serverManager);
-        }),
-
-        vscode.commands.registerCommand('conan.stopServer', () => {
-            stopBackend(serverManager);
-        })
-    );
 }
 
 export function activate(context: vscode.ExtensionContext) {
@@ -156,9 +138,7 @@ export function activate(context: vscode.ExtensionContext) {
         // This enables detection of conanfile creation/deletion
         context.subscriptions.push(serverManager,
 
-            createConanProject(workspaceRoot, serverManager),
-
-            registerCommands(serverManager)
+            createConanProject(workspaceRoot, serverManager)
         );
 
         // Show welcome message

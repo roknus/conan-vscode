@@ -184,7 +184,7 @@ export class ConanServerManager implements vscode.Disposable {
         }
     }
 
-    async startServer(): Promise<boolean> {
+    async startServer(workspace_path: string): Promise<boolean> {
 
         if (this._state === 'running') {
             return true;
@@ -214,7 +214,7 @@ export class ConanServerManager implements vscode.Disposable {
         }
 
         // Start our own server
-        return await this.startOwnServer(this.extensionPath);
+        return await this.startOwnServer(workspace_path, this.extensionPath);
     }
 
     async connectToServer(): Promise<boolean> {
@@ -244,7 +244,7 @@ export class ConanServerManager implements vscode.Disposable {
         }
     }
 
-    private async startOwnServer(extensionPath: string): Promise<boolean> {
+    private async startOwnServer(workspacePath: string, extensionPath: string): Promise<boolean> {
         try {
             this.pythonApi = await PythonExtension.api();
 
@@ -268,12 +268,12 @@ export class ConanServerManager implements vscode.Disposable {
             let serverScript: string;
             if (extensionPath) {
                 // First try the dist directory (for packaged extension)
-                const distServerScript = path.join(extensionPath, 'dist', 'conan_server.py');
+                const distServerScript = path.join(extensionPath, 'dist', 'backend', 'conan_server.py');
                 if (fs.existsSync(distServerScript)) {
                     serverScript = distServerScript;
                 } else {
                     // Then try the root directory (for development)
-                    serverScript = path.join(extensionPath, 'conan_server.py');
+                    serverScript = path.join(extensionPath, 'backend', 'conan_server.py');
                 }
             } else {
                 vscode.window.showErrorMessage('conan_server.py not found. Please ensure the extension is properly installed.');
@@ -290,6 +290,7 @@ export class ConanServerManager implements vscode.Disposable {
                 '--host', SERVER_HOST,
                 '--port', '0'  // Let server choose any available port
             ], {
+                cwd: workspacePath, // The backend need to be launched in the workspace folder
                 stdio: 'pipe',
                 env: { ...process.env }
             });

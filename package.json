@@ -78,18 +78,6 @@
         "icon": "$(cloud-upload)"
       },
       {
-        "command": "conan.startServer",
-        "title": "Start Conan API Server",
-        "category": "Conan",
-        "icon": "$(server-process)"
-      },
-      {
-        "command": "conan.stopServer",
-        "title": "Stop Conan API Server",
-        "category": "Conan",
-        "icon": "$(stop-circle)"
-      },
-      {
         "command": "conan.selectHostProfile",
         "title": "Select Active Host Profile",
         "category": "Conan",
@@ -235,14 +223,6 @@
         },
         {
           "command": "conan.addRemote",
-          "when": "conanBackendReady"
-        },
-        {
-          "command": "conan.startServer",
-          "when": "conanBackendReady"
-        },
-        {
-          "command": "conan.stopServer",
           "when": "conanBackendReady"
         },
         {
