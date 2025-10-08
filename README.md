@@ -1,5 +1,7 @@
 # Conan Package Manager
 
+> ⚠️ **Development Status**: This extension is currently under heavy development and may not be stable. Features are subject to change, and you may encounter bugs or incomplete functionality. Use with caution in production environments.
+
 A comprehensive Visual Studio Code extension for managing Conan C++ packages, profiles, and remotes.
 
 ## 🚀 Features
@@ -19,8 +21,8 @@ A comprehensive Visual Studio Code extension for managing Conan C++ packages, pr
 - **Visual Binary Status**: Different icons show package availability:
   - 📦 `$(archive)` - Binaries available on remotes
   - 📄 `$(file-code)` - Recipe only, needs building
-  - � `$(error)` - Incompatible package
-  - �📦 `$(package)` - Status unknown (fallback)
+  - 📦 `$(error)` - Incompatible package
+  - 📦 `$(package)` - Status unknown (fallback)
 
 ### 🔧 Advanced Server Integration
 - **Built-in Server**: Integrated server for enhanced package operations
@@ -33,19 +35,16 @@ A comprehensive Visual Studio Code extension for managing Conan C++ packages, pr
 - **Create Profiles**: Easy profile creation with auto-detection and local/global choice
 - **View Profiles**: Hierarchical tree view showing Global and Local profile sections
 - **Profile Selection**: Quick profile switching via status bar
-- **Refresh**: Update profile list on demand
 
 ### 🌐 Remote Management
 - **Add Remotes**: Configure new Conan remotes with name and URL
+- **Login Remotes**: Authenticate to remotes that require login
 - **List Remotes**: View all configured remotes with their URLs via API or CLI
 - **Remote Selection**: Quick remote switching via status bar
 - **Default Remotes**: Support for conancenter and custom remotes
 
 ### ⚡ Enhanced UI
 - **Tree Views**: Hierarchical display of packages, profiles, and remotes in the activity bar
-- **Terminal Integration**: Execute Conan commands in integrated terminal
-- **Icons**: Beautiful icons for different item types and statuses
-- **Server Status**: Visual indicators for API server status
 - **Profile Status Bar**: Shows active host and build profiles in the status bar
 - **Remote Status Bar**: Shows active Conan remote in the status bar
 
@@ -53,14 +52,11 @@ A comprehensive Visual Studio Code extension for managing Conan C++ packages, pr
 
 - **VS Code**: Version 1.101.0 or higher
 - **Python Extension (ms-python.python)**: Required for server functionality
-- **Conan**: Must be installed and available in your system PATH
 
 ## 🛠️ Installation
 
 1. Install the extension from the VS Code marketplace
 2. Ensure Python extension (ms-python.python) is installed
-3. Ensure Conan is installed on your system
-4. Open a workspace containing `conanfile.txt` or `conanfile.py`
 
 ## 🎯 Usage
 
