@@ -135,9 +135,19 @@ export class ConanProject implements vscode.Disposable {
         this.api = new ConanApiClient(this.serverManager);
 
 
-        this.disposables.push(this.serverManager.onStateChange((newState) => {
-            this.conanStore.setServerState(newState);
-        }));
+        this.disposables.push(
+            this.serverManager.onStateChange((newState) => {
+                this.conanStore.setServerState(newState);
+            }),
+
+            this.conanStore.subscribe(state => state.activeHostProfile, () => {
+                refreshPackages(this.conanStore, this.api);
+            }),
+
+            this.conanStore.subscribe(state => state.activeBuildProfile, () => {
+                refreshPackages(this.conanStore, this.api);
+            })
+        );
 
         this.initializeProviders();
 

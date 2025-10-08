@@ -161,7 +161,7 @@
         },
         {
           "command": "conan.installPackages",
-          "when": "view == conan.packages",
+          "when": "view == conan.packages && conan.packages.hasPackages",
           "group": "navigation"
         },
         {
@@ -236,6 +236,26 @@
         {
           "command": "conan.selectRemote",
           "when": "conanBackendReady"
+        },
+        {
+          "command": "conan.installPackage",
+          "when": "false"
+        },
+        {
+          "command": "conan.uploadLocalPackage",
+          "when": "false"
+        },
+        {
+          "command": "conan.openProfileFile",
+          "when": "false"
+        },
+        {
+          "command": "conan.loginRemote",
+          "when": "false"
+        },
+        {
+          "command": "conan.removeRemote",
+          "when": "false"
         }
       ]
     },
@@ -296,7 +316,10 @@
         "conan.preferredConanfileFormat": {
           "type": "string",
           "default": "py",
-          "enum": ["py", "txt"],
+          "enum": [
+            "py",
+            "txt"
+          ],
           "enumDescriptions": [
             "Prefer conanfile.py when both formats exist",
             "Prefer conanfile.txt when both formats exist"
