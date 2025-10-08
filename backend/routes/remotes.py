@@ -79,7 +79,7 @@ async def login_remote(request: RemoteLoginRequest):
                 status_code=404, detail=f"Remote '{request.name}' not found")
 
         # Perform login
-        conan_api.remotes.login(remote, request.user, request.password)
+        conan_api.remotes.user_login(remote, request.user, request.password)
 
         return {"success": True, "message": f"Logged in to remote '{request.name}' successfully"}
     except Exception as e:

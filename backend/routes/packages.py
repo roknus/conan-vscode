@@ -128,99 +128,64 @@ async def parse_conanfile(conan_api: ConanAPI, file_path: str, host_profile: str
     """Parse conanfile.py and extract packages with optional remote filtering."""
     packages: List[ConanPackage] = []
 
-    try:
-        # Load the specified profiles
-        profile_host = conan_api.profiles.get_profile(
-            [host_profile], {}, {}, {}, None)
-        profile_build = conan_api.profiles.get_profile(
-            [build_profile], {}, {}, {}, None)
+    # Load the specified profiles
+    profile_host = conan_api.profiles.get_profile(
+        [host_profile], {}, {}, {}, None)
+    profile_build = conan_api.profiles.get_profile(
+        [build_profile], {}, {}, {}, None)
 
-        # Set up remotes to check
-        remotes: List[Remote] = []
-        if not remote_name:
-            remotes = conan_api.remotes.list()
-        else:
-            try:
-                specific_remote = conan_api.remotes.get(remote_name)
-                remotes.append(specific_remote)
-                # Always include conancenter as fallback unless it's already the specified remote
-                if remote_name != "conancenter":
-                    try:
-                        conancenter = conan_api.remotes.get('conancenter')
-                        remotes.append(conancenter)
-                    except:
-                        pass  # conancenter might not be configured
-            except Exception as e:
-                print(f"Failed to get remote {remote_name}: {e}")
-                return PackageAvailability(
-                    recipe_status="error",
-                    binary_status="error"
-                )
+    # Set up remotes to check
+    remotes: List[Remote] = []
+    if not remote_name:
+        remotes = conan_api.remotes.list()
+    else:
+        try:
+            specific_remote = conan_api.remotes.get(remote_name)
+            remotes.append(specific_remote)
+            # Always include conancenter as fallback unless it's already the specified remote
+            if remote_name != "conancenter":
+                try:
+                    conancenter = conan_api.remotes.get('conancenter')
+                    remotes.append(conancenter)
+                except:
+                    pass  # conancenter might not be configured
+        except Exception as e:
+            print(f"Failed to get remote {remote_name}: {e}")
+            return PackageAvailability(
+                recipe_status="error",
+                binary_status="error"
+            )
 
-        # Remove the remotes that are not authenticated
-        for remote in remotes[:]:  # Copy the list to avoid modification during iteration
-            if not is_authenticated(conan_api, remote):
-                print(f"Not authenticated to remote {remote.name}")
-                remotes.remove(remote)
+    # Remove the remotes that are not authenticated
+    for remote in remotes[:]:  # Copy the list to avoid modification during iteration
+        if not is_authenticated(conan_api, remote):
+            print(f"Not authenticated to remote {remote.name}")
+            remotes.remove(remote)
 
-        root_node = conan_api.graph.load_graph_consumer(
-            file_path, None, None, None, None, profile_host, profile_build, None, remotes=remotes, update=None
-        )
+    deps_graph = conan_api.graph.load_graph_consumer(
+        file_path, None, None, None, None, profile_host, profile_build, None, remotes=remotes, update=None
+    )
+    
+    if deps_graph.error:
+        raise Exception(str(deps_graph.error))
 
-        for dep, edge in root_node.root.transitive_deps.items():
+    # Analyze binaries to see what's available
+    conan_api.graph.analyze_binaries(
+        deps_graph,
+        # Don't build anything, just analyze what exists
+        build_mode=['never'],
+        remotes=remotes,
+        update=None,
+        lockfile=None,
+        build_modes_test=None,
+        tested_graph=None
+    )
 
-            try:
-                # Create a dependency graph for this specific package requirement
-                deps_graph = conan_api.graph.load_graph_requires(
-                    requires=[dep.ref],
-                    tool_requires=None,
-                    profile_host=profile_host,
-                    profile_build=profile_build,
-                    lockfile=None,
-                    remotes=remotes,
-                    update=["*"]
-                )
+    for edge in deps_graph.root.edges:
+        package = create_package_from_node(conan_api, edge.dst, remotes)
+        packages.append(package)
 
-                if deps_graph.error:
-                    availability = PackageAvailability(
-                        is_incompatible=True,
-                        incompatible_reason=str(deps_graph.error),
-                        local_status="none",
-                        remote_status="none"
-                    )
-
-                    package = ConanPackage(
-                        name=dep.ref.name,
-                        version=str(dep.ref.version),
-                        ref=str(dep.ref),
-                        availability=availability
-                    )
-                    packages.append(package)
-
-                # Analyze binaries to see what's available
-                conan_api.graph.analyze_binaries(
-                    deps_graph,
-                    # Don't build anything, just analyze what exists
-                    build_mode=['never'],
-                    remotes=remotes,
-                    update=None,
-                    lockfile=None,
-                    build_modes_test=None,
-                    tested_graph=None
-                )
-
-                for edge in deps_graph.root.edges:
-                    package = create_package_from_node(conan_api, edge.dst, remotes)
-                    packages.append(package)
-
-            except Exception as e:
-                print(f"Error analyzing package {dep.ref}: {e}")
-
-        return packages
-    except Exception as e:
-        print(f"Error parsing conanfile: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Error parsing conanfile: {str(e)}")
+    return packages
 
 
 @router.get("", response_model=List[ConanPackage])
@@ -242,8 +207,9 @@ async def get_packages(
     """
     conan_api = get_conan_api()
     if conan_api is None:
-        raise HTTPException(status_code=500, detail="Conan API not initialized")
-    
+        raise HTTPException(
+            status_code=500, detail="Conan API not initialized")
+
     try:
         conanfile_path = find_conanfile(workspace_path)
 
@@ -260,7 +226,8 @@ async def install_packages(request: InstallRequest):
     """Install packages from conanfile."""
     conan_api = get_conan_api()
     if conan_api is None:
-        raise HTTPException(status_code=500, detail="Conan API not initialized")
+        raise HTTPException(
+            status_code=500, detail="Conan API not initialized")
 
     try:
         conanfile_path = find_conanfile(request.workspace_path)
@@ -320,7 +287,8 @@ async def install_package(request: InstallPackageRequest):
     """Install a specific package by reference."""
     conan_api = get_conan_api()
     if conan_api is None:
-        raise HTTPException(status_code=500, detail="Conan API not initialized")
+        raise HTTPException(
+            status_code=500, detail="Conan API not initialized")
 
     try:
         # Get profiles
@@ -376,7 +344,8 @@ async def upload_local_package(request: UploadLocalRequest):
     """Upload a specific local package to remote (synchronous)."""
     conan_api = get_conan_api()
     if conan_api is None:
-        raise HTTPException(status_code=500, detail="Conan API not initialized")
+        raise HTTPException(
+            status_code=500, detail="Conan API not initialized")
 
     try:
         # Get the remote
@@ -386,7 +355,8 @@ async def upload_local_package(request: UploadLocalRequest):
         # Check if package exists locally first
         try:
             from conan.api.model import ListPattern
-            ref_pattern = ListPattern(request.package_ref, package_id=request.package_id)
+            ref_pattern = ListPattern(
+                request.package_ref, package_id=request.package_id)
 
             # Get specified profiles for listing
             try:
