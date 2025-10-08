@@ -120,6 +120,16 @@
         "icon": "$(globe)"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "conan-explorer",
+          "title": "Conan",
+          "icon": "$(package)",
+          "when": "conanBackendReady"
+        }
+      ]
+    },
     "views": {
       "conan-explorer": [
         {
@@ -138,16 +148,6 @@
           "id": "conan.remotes",
           "icon": "$(globe)",
           "name": "Remotes",
-          "when": "conanBackendReady"
-        }
-      ]
-    },
-    "viewsContainers": {
-      "activitybar": [
-        {
-          "id": "conan-explorer",
-          "title": "Conan",
-          "icon": "$(package)",
           "when": "conanBackendReady"
         }
       ]
