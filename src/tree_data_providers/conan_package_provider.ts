@@ -42,16 +42,6 @@ export class ConanPackageProvider implements vscode.TreeDataProvider<ConanPackag
             // Register for packages state changes
             this.conanStore.subscribe(state => state.packages, () => {
                 this._onDidChangeTreeData.fire();
-            }),
-
-            // Register for active build profile changes
-            this.conanStore.subscribe(state => state.activeBuildProfile, () => {
-                this._onDidChangeTreeData.fire();
-            }),
-
-            // Register for active host profile changes
-            this.conanStore.subscribe(state => state.activeHostProfile, () => {
-                this._onDidChangeTreeData.fire();
             })
         );
     }
@@ -83,11 +73,17 @@ export class ConanPackageProvider implements vscode.TreeDataProvider<ConanPackag
         return [];
     }
 
+    private setHasPackages(hasPackages: boolean) {
+        vscode.commands.executeCommand('setContext', 'conan.packages.hasPackages', hasPackages);
+    }
+
     private async getConanPackages(): Promise<(ConanPackageItem | vscode.TreeItem)[]> {
         const serverState = this.conanStore.getServerState();
 
         switch (serverState) {
             case 'starting': {
+                this.setHasPackages(false);
+
                 const item = new vscode.TreeItem('Conan API Server is starting...', vscode.TreeItemCollapsibleState.None);
                 item.iconPath = new vscode.ThemeIcon('info');
                 item.contextValue = 'info';
@@ -100,6 +96,8 @@ export class ConanPackageProvider implements vscode.TreeDataProvider<ConanPackag
                 try {
                     const packages = this.conanStore.getPackages();
                     if (!packages) {
+                        this.setHasPackages(false);
+
                         if (this.conanStore.activeBuildProfile === null || this.conanStore.activeHostProfile === null) {
                             const item = new vscode.TreeItem('Profile not selected', vscode.TreeItemCollapsibleState.None);
                             item.iconPath = new vscode.ThemeIcon('info');
@@ -117,9 +115,12 @@ export class ConanPackageProvider implements vscode.TreeDataProvider<ConanPackag
                         return [item];
                     }
 
+                    this.setHasPackages(true);
                     return packages.map(pkg => this.createConanPackageItem(pkg));
                 } catch (error) {
                     this.logger.warn('Package API request failed:', error);
+
+                    this.setHasPackages(false);
 
                     // Check if the error is about missing profiles
                     if (error && typeof error === 'object' && 'message' in error) {
@@ -143,6 +144,8 @@ export class ConanPackageProvider implements vscode.TreeDataProvider<ConanPackag
                 }
 
             case 'error': {
+                this.setHasPackages(false);
+
                 const item = new vscode.TreeItem('Conan API Server failed to start', vscode.TreeItemCollapsibleState.None);
                 item.iconPath = new vscode.ThemeIcon('error');
                 item.contextValue = 'error';
@@ -153,6 +156,8 @@ export class ConanPackageProvider implements vscode.TreeDataProvider<ConanPackag
 
             case 'stopped':
             default: {
+                this.setHasPackages(false);
+
                 const item = new vscode.TreeItem('Conan API Server is not available', vscode.TreeItemCollapsibleState.None);
                 item.iconPath = new vscode.ThemeIcon('info');
                 item.contextValue = 'info';
