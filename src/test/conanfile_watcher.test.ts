@@ -20,7 +20,7 @@ suite('Extension Conanfile Watcher Tests', () => {
         }
     });
 
-    test('conanBackendReady context is set correctly on startup', async () => {
+    test('conan.backendReady context is set correctly on startup', async () => {
         // This test would require actual VS Code workspace manipulation
         // For now, we'll test the logic indirectly through our utility functions
         
@@ -147,7 +147,7 @@ suite('Extension Conanfile Watcher Tests', () => {
         }
     });
     
-    test('conanBackendReady context affects UI visibility', async () => {
+    test('conan.backendReady context affects UI visibility', async () => {
         // This test verifies the logic for showing/hiding UI elements based on conanfile presence
         
         // Initially no conanfiles - should hide UI elements

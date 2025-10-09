@@ -77,6 +77,9 @@ function isValidActiveRemote(value: any): value is Remote | AllRemotes {
 export enum TaskType {
     INSTALL_PACKAGE = 'installPackage',
     UPLOAD_PACKAGE = 'uploadPackage',
+    BUILD_PACKAGE = 'buildPackage',
+    CREATE_PACKAGE = 'createPackage',
+    TEST_PACKAGE = 'testPackage',
 }
 
 export interface RunningTask {

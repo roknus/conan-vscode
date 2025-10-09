@@ -10,7 +10,7 @@ from dependencies.conan_deps import get_conan_api, find_conanfile
 from conan_utils import is_authenticated
 
 try:
-    from conan.api.model import ListPattern, RecipeReference, PkgReference, Remote
+    from conan.api.model import RecipeReference, PkgReference, Remote
     from conan.api.conan_api import ConanAPI
     from conan.errors import ConanException
     from conan.internal.graph.graph import Node
@@ -332,6 +332,7 @@ async def install_package(request: InstallPackageRequest):
             "status": "completed"
         }
     except ConanException as e:
+        print(str(e))
         raise HTTPException(
             status_code=500, detail=f"Conan API error: {str(e)}")
     except Exception as e:

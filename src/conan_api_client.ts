@@ -152,4 +152,31 @@ export class ConanApiClient {
     async removeRemote(name: string): Promise<any> {
         return this.makeRequest('/remotes/remove', 'POST', { name: name });
     }
+
+    async buildPackage(workspacePath: string, hostProfile: string, buildProfile: string, options: any = {}): Promise<any> {
+        return this.makeRequest('/project/build', 'POST', {
+            workspace_path: workspacePath,
+            host_profile: hostProfile,
+            build_profile: buildProfile,
+            options: options
+        });
+    }
+
+    async createPackage(workspacePath: string, hostProfile: string, buildProfile: string, options: any = {}): Promise<any> {
+        return this.makeRequest('/project/create', 'POST', {
+            workspace_path: workspacePath,
+            host_profile: hostProfile,
+            build_profile: buildProfile,
+            options: options
+        });
+    }
+
+    async testPackage(workspacePath: string, hostProfile: string, buildProfile: string, options: any = {}): Promise<any> {
+        return this.makeRequest('/project/test', 'POST', {
+            workspace_path: workspacePath,
+            host_profile: hostProfile,
+            build_profile: buildProfile,
+            options: options
+        });
+    }
 }
