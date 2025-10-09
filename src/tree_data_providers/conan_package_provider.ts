@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { ConanStore, PackageInfo, PackageItemType, PackageRemoteStatus, Remote, TaskType } from '../conan_store';
+import { ConanStore, PackageInfo, PackageItemType, PackageLocalStatus, PackageRemoteStatus, Remote, TaskType } from '../conan_store';
 import { ConanPackageItem, } from './conan_package_item';
 import { getLogger } from '../logger';
 
@@ -9,9 +9,9 @@ function getPackageRemoteStatus(remotesStatus: PackageRemoteStatus[], activeRemo
     if (activeRemote === 'all') {
         let highestStatus = 'none';
         for (const status of remotesStatus) {
-            if (status.status === 'recipe+binary') {
+            if (status.recipe_status === 'available' && status.binary_status === 'available') {
                 return 'recipe+binary'; // Highest availability found
-            } else if (status.status === 'recipe' && highestStatus !== 'recipe+binary') {
+            } else if (status.recipe_status === 'available' && highestStatus !== 'recipe+binary') {
                 highestStatus = 'recipe'; // Update to recipe if not already at highest
             }
         }
@@ -19,11 +19,30 @@ function getPackageRemoteStatus(remotesStatus: PackageRemoteStatus[], activeRemo
     } else {
         for (const status of remotesStatus) {
             if (status.remote_name === activeRemote.name) {
-                return status.status;
+                if (status.recipe_status === 'available' && status.binary_status === 'available') {
+                    return 'recipe+binary';
+                } else if (status.recipe_status === 'available') {
+                    return 'recipe';
+                }
             }
         }
         return 'none'; // Remote not found, assume none
     }
+}
+
+function getPackageLocalStatus(status: PackageLocalStatus): string {
+    let highestStatus = 'none';
+
+    if(status.recipe_status === 'consumer') {
+        return 'producer'
+    }
+
+    if (status.recipe_status === 'cache' && status.binary_status === 'cache') {
+        return 'recipe+binary'; // Highest availability found
+    } else if (status.recipe_status === 'cache' && highestStatus !== 'recipe+binary') {
+        highestStatus = 'recipe'; // Update to recipe if not already at highest
+    }
+    return highestStatus;
 }
 
 export class ConanPackageProvider implements vscode.TreeDataProvider<ConanPackageItem | vscode.TreeItem> {
@@ -204,18 +223,21 @@ export class ConanPackageProvider implements vscode.TreeDataProvider<ConanPackag
         }
 
         const availability = pkg.availability;
+        const localStatus = getPackageLocalStatus(availability.local_status);
         const remoteStatus = getPackageRemoteStatus(availability.remotes_status, this.conanStore.activeRemote);
 
-        if (availability.is_incompatible) {
+        if(localStatus === 'producer') {
+            return 'package-producer';
+        } else if (availability.is_incompatible) {
             return 'package-incompatible';
-        } else if (availability.local_status === 'recipe+binary' && remoteStatus === 'recipe+binary') {
+        } else if (localStatus === 'recipe+binary' && remoteStatus === 'recipe+binary') {
             return 'package-available'; // Package available both remotely and locally
-        } else if (this.conanStore.activeRemote !== 'all' && availability.local_status === 'recipe+binary' && remoteStatus !== 'recipe+binary') {
+        } else if (this.conanStore.activeRemote !== 'all' && localStatus === 'recipe+binary' && remoteStatus !== 'recipe+binary') {
             // Only show uploadable if a specific remote is selected and package otherwise we could not know where to upload
             return 'package-uploadable'; // Package available for upload
-        } else if (remoteStatus === 'recipe+binary' && availability.local_status !== 'recipe+binary') {
+        } else if (remoteStatus === 'recipe+binary' && localStatus !== 'recipe+binary') {
             return 'package-downloadable'; // Package available for download
-        } else if (availability.local_status === 'recipe' || remoteStatus === 'recipe') {
+        } else if (localStatus === 'recipe' || remoteStatus === 'recipe') {
             return 'package-buildable'; // Recipe available, can build locally
         } else {
             return 'package-unknown';

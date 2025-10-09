@@ -68,6 +68,35 @@ const copyFilesPlugin = {
 					console.warn(`Warning: ${file} not found`);
 				}
 			});
+
+			// Copy Python backend files
+			const pythonFiles = [
+				'backend/conan_server.py',
+				'backend/routes/packages.py',
+				'backend/routes/profiles.py', 
+				'backend/routes/remotes.py',
+				'backend/routes/project.py',
+				'backend/dependencies/conan_deps.py',
+				'backend/models/conan_models.py'
+			];
+
+			pythonFiles.forEach(file => {
+				const srcPath = path.join(__dirname, file);
+				const destPath = path.join(__dirname, 'dist', file);
+				
+				// Create directory if it doesn't exist
+				const destDir = path.dirname(destPath);
+				if (!fs.existsSync(destDir)) {
+					fs.mkdirSync(destDir, { recursive: true });
+				}
+				
+				if (fs.existsSync(srcPath)) {
+					fs.copyFileSync(srcPath, destPath);
+					console.log(`Copied ${file} to dist/`);
+				} else {
+					console.warn(`Warning: ${file} not found`);
+				}
+			});
 		});
 	},
 };

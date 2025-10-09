@@ -30,6 +30,7 @@ except ImportError:
 from routes.packages import router as packages_router
 from routes.profiles import router as profiles_router
 from routes.remotes import router as remotes_router
+from routes.project import router as project_router
 from dependencies.conan_deps import get_conan_api, set_conan_api
 from models.conan_models import ConanSettings
 
@@ -73,6 +74,7 @@ app.add_middleware(
 app.include_router(packages_router)
 app.include_router(profiles_router)
 app.include_router(remotes_router)
+app.include_router(project_router)
 
 
 @app.get("/")

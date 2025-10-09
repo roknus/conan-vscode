@@ -48,26 +48,8 @@
         "icon": "$(cloud-download)"
       },
       {
-        "command": "conan.createProfile",
-        "title": "Create Profile",
-        "category": "Conan",
-        "icon": "$(add)"
-      },
-      {
         "command": "conan.refreshPackages",
         "title": "Refresh Packages",
-        "category": "Conan",
-        "icon": "$(refresh)"
-      },
-      {
-        "command": "conan.refreshProfiles",
-        "title": "Refresh Profiles",
-        "category": "Conan",
-        "icon": "$(refresh)"
-      },
-      {
-        "command": "conan.refreshRemotes",
-        "title": "Refresh Remotes",
         "category": "Conan",
         "icon": "$(refresh)"
       },
@@ -76,6 +58,18 @@
         "title": "Upload to Remote",
         "category": "Conan",
         "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "conan.createProfile",
+        "title": "Create Profile",
+        "category": "Conan",
+        "icon": "$(add)"
+      },
+      {
+        "command": "conan.refreshProfiles",
+        "title": "Refresh Profiles",
+        "category": "Conan",
+        "icon": "$(refresh)"
       },
       {
         "command": "conan.selectHostProfile",
@@ -94,6 +88,12 @@
         "title": "Open File",
         "category": "Conan",
         "icon": "$(go-to-file)"
+      },
+      {
+        "command": "conan.refreshRemotes",
+        "title": "Refresh Remotes",
+        "category": "Conan",
+        "icon": "$(refresh)"
       },
       {
         "command": "conan.selectRemote",
@@ -118,6 +118,24 @@
         "title": "Remove Remote",
         "category": "Conan",
         "icon": "$(globe)"
+      },
+      {
+        "command": "conan.buildPackage",
+        "title": "Build Package",
+        "category": "Conan",
+        "icon": "$(tools)"
+      },
+      {
+        "command": "conan.createPackage",
+        "title": "Create Package",
+        "category": "Conan",
+        "icon": "$(package)"
+      },
+      {
+        "command": "conan.testPackage",
+        "title": "Test Package",
+        "category": "Conan",
+        "icon": "$(beaker)"
       }
     ],
     "viewsContainers": {
@@ -126,7 +144,7 @@
           "id": "conan-explorer",
           "title": "Conan",
           "icon": "$(package)",
-          "when": "conanBackendReady"
+          "when": "conan.backendReady"
         }
       ]
     },
@@ -136,19 +154,19 @@
           "id": "conan.packages",
           "icon": "$(package)",
           "name": "Packages",
-          "when": "conanBackendReady"
+          "when": "conan.backendReady"
         },
         {
           "id": "conan.profiles",
           "icon": "$(person)",
           "name": "Profiles",
-          "when": "conanBackendReady"
+          "when": "conan.backendReady"
         },
         {
           "id": "conan.remotes",
           "icon": "$(globe)",
           "name": "Remotes",
-          "when": "conanBackendReady"
+          "when": "conan.backendReady"
         }
       ]
     },
@@ -162,6 +180,16 @@
         {
           "command": "conan.installPackages",
           "when": "view == conan.packages && conan.packages.hasPackages",
+          "group": "navigation"
+        },
+        {
+          "command": "conan.createPackage",
+          "when": "view == conan.packages && conan.producerProject",
+          "group": "navigation"
+        },
+        {
+          "command": "conan.testPackage",
+          "when": "view == conan.packages && conan.producerProject",
           "group": "navigation"
         },
         {
@@ -197,6 +225,16 @@
           "group": "inline"
         },
         {
+          "command": "conan.createPackage",
+          "when": "view == conan.packages && viewItem == package-producer",
+          "group": "inline"
+        },
+        {
+          "command": "conan.testPackage",
+          "when": "view == conan.packages && viewItem == package-producer",
+          "group": "inline"
+        },
+        {
           "command": "conan.openProfileFile",
           "when": "view == conan.profiles && viewItem == profile",
           "group": "navigation"
@@ -215,27 +253,27 @@
       "commandPalette": [
         {
           "command": "conan.installPackages",
-          "when": "conanBackendReady"
+          "when": "conan.backendReady"
         },
         {
           "command": "conan.createProfile",
-          "when": "conanBackendReady"
+          "when": "conan.backendReady"
         },
         {
           "command": "conan.addRemote",
-          "when": "conanBackendReady"
+          "when": "conan.backendReady"
         },
         {
           "command": "conan.selectHostProfile",
-          "when": "conanBackendReady"
+          "when": "conan.backendReady"
         },
         {
           "command": "conan.selectBuildProfile",
-          "when": "conanBackendReady"
+          "when": "conan.backendReady"
         },
         {
           "command": "conan.selectRemote",
-          "when": "conanBackendReady"
+          "when": "conan.backendReady"
         },
         {
           "command": "conan.installPackage",
@@ -256,16 +294,21 @@
         {
           "command": "conan.removeRemote",
           "when": "false"
+        },
+        {
+          "command": "conan.buildPackage",
+          "when": "conan.backendReady && conan.producerProject"
+        },
+        {
+          "command": "conan.createPackage",
+          "when": "conan.backendReady && conan.producerProject"
+        },
+        {
+          "command": "conan.testPackage",
+          "when": "conan.backendReady && conan.producerProject"
         }
       ]
     },
-    "keybindings": [
-      {
-        "command": "conan.openWebview",
-        "key": "ctrl+shift+c ctrl+shift+m",
-        "when": "conanBackendReady"
-      }
-    ],
     "configuration": {
       "title": "Conan Package Manager",
       "properties": {
