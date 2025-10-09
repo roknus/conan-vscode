@@ -56,8 +56,8 @@ export class ConanPackageItem extends vscode.TreeItem {
 
             // Local availability
             tooltip += `📁 Local:\n`;
-            tooltip += `\t🔨 Recipe: ${avail.local_status.startsWith('recipe') ? '✅' : '❌'}\n`;
-            tooltip += `\t📦 Binary: ${avail.local_status === 'recipe+binary' ? '✅' : '❌'}\n`;
+            tooltip += `\t🔨 Recipe: ${avail.local_status.recipe_status === 'cache' ? '✅' : '❌'}\n`;
+            tooltip += `\t📦 Binary: ${avail.local_status.binary_status === 'cache' ? '✅' : '❌'}\n`;
 
             // Enhanced remote availability info
             tooltip += `🌐 Remotes:\n`;
@@ -65,8 +65,8 @@ export class ConanPackageItem extends vscode.TreeItem {
                 const isActiveRemote = (activeRemote !== 'all' && remoteStatus.remote_name === activeRemote.name);
                 const remoteLabel = isActiveRemote ? `${remoteStatus.remote_name} (active)` : remoteStatus.remote_name;
                 tooltip += `\t- ${remoteLabel}:\n`;
-                tooltip += `\t\t🔨 Recipe: ${remoteStatus.status.startsWith('recipe') ? '✅' : '❌'}\n`;
-                tooltip += `\t\t📦 Binary: ${remoteStatus.status === 'recipe+binary' ? '✅' : '❌'}\n`;
+                tooltip += `\t\t🔨 Recipe: ${remoteStatus.recipe_status === 'available' ? '✅' : '❌'}\n`;
+                tooltip += `\t\t📦 Binary: ${remoteStatus.binary_status === 'available' ? '✅' : '❌'}\n`;
             }
 
             // Only show incompatible warning if it's actually incompatible

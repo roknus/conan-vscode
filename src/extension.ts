@@ -13,7 +13,7 @@ async function stopBackend(serverManager: ConanServerManager): Promise<void> {
         return;
     }
 
-    vscode.commands.executeCommand('setContext', 'conanBackendReady', false);
+    vscode.commands.executeCommand('setContext', 'conan.backendReady', false);
 
     await serverManager.stopServer();
     vscode.window.showInformationMessage('Conan API backend stopped');
@@ -36,7 +36,7 @@ async function startBackend(workspace_path: string, serverManager: ConanServerMa
     }
 
     // Update the context for UI visibility
-    vscode.commands.executeCommand('setContext', 'conanBackendReady', true);
+    vscode.commands.executeCommand('setContext', 'conan.backendReady', true);
 
     await serverConnected;
 }
@@ -60,6 +60,8 @@ function createConanProject(workspaceRoot: string, serverManager: ConanServerMan
             const conanfileInfo = detectConanfiles(workspaceRoot);
 
             await startBackend(workspaceRoot, serverManager);
+
+            vscode.commands.executeCommand('setContext', 'conan.producerProject', conanfileInfo.preferredFile?.endsWith('.py'));
 
             conanProject.activate();
 
@@ -94,6 +96,7 @@ function createConanProject(workspaceRoot: string, serverManager: ConanServerMan
     (async () => {
         // Start extension if conanfile already exists
         const conanfileInfo = detectConanfiles(workspaceRoot);
+        vscode.commands.executeCommand('setContext', 'conan.producerProject', conanfileInfo.preferredFile?.endsWith('.py'));
         if (conanfileInfo.hasAnyConanfile) {
             await startBackend(workspaceRoot, serverManager);
 

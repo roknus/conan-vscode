@@ -15,7 +15,9 @@ import {
     refreshPackages,
     refreshProfiles,
     refreshRemotes,
-    selectProfile
+    selectProfile,
+    createPackage,
+    testPackage
 } from './commands/commands';
 import { ProfileStatusBar } from './conan_profile_status_bar';
 import { getLogger } from './logger';
@@ -108,6 +110,18 @@ function registerCommands(conanStore: ConanStore, apiClient: ConanApiClient): vs
         vscode.commands.registerCommand('conan.selectRemote', () => {
             if (conanStore) {
                 selectRemote(conanStore);
+            }
+        }),
+
+        vscode.commands.registerCommand('conan.createPackage', () => {
+            if (conanStore && apiClient) {
+                createPackage(conanStore, apiClient);
+            }
+        }),
+
+        vscode.commands.registerCommand('conan.testPackage', () => {
+            if (conanStore && apiClient) {
+                testPackage(conanStore, apiClient);
             }
         }),
     );

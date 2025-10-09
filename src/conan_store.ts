@@ -11,21 +11,32 @@ export type PackageItemType =
     | 'package-incompatible'
     | 'package-unknown'
     | 'package-installing'
-    | 'package-uploading';
+    | 'package-uploading'
+    | 'package-producer';
 
 
-export type PackageStatus = 'none' | 'recipe' | 'recipe+binary';
+export type PackageLocalRecipeStatus = 'none' | 'cache' | 'consumer';
+export type PackageLocalBinaryStatus = 'none' | 'cache';
+
+export type PackageRemoteRecipeStatus = 'none' | 'available';
+export type PackageRemoteBinaryStatus = 'none' | 'available';
+
+export interface PackageLocalStatus {
+    recipe_status: PackageLocalRecipeStatus;
+    binary_status: PackageLocalBinaryStatus;
+}
 
 export interface PackageRemoteStatus {
     remote_name: string;
-    status: PackageStatus;
+    recipe_status: PackageRemoteRecipeStatus;
+    binary_status: PackageRemoteBinaryStatus;
 }
 
 // TypeScript interfaces for API responses
 export interface PackageAvailability {
     is_incompatible: boolean;
     incompatible_reason?: string;
-    local_status: PackageStatus;
+    local_status: PackageLocalStatus;
     remotes_status: PackageRemoteStatus[];
 }
 
@@ -77,6 +88,9 @@ function isValidActiveRemote(value: any): value is Remote | AllRemotes {
 export enum TaskType {
     INSTALL_PACKAGE = 'installPackage',
     UPLOAD_PACKAGE = 'uploadPackage',
+    BUILD_PACKAGE = 'buildPackage',
+    CREATE_PACKAGE = 'createPackage',
+    TEST_PACKAGE = 'testPackage',
 }
 
 export interface RunningTask {

@@ -3,19 +3,19 @@ from fastapi import APIRouter, HTTPException
 import sys
 
 from models.conan_models import (
-    ConanPackage, PackageAvailability, PackageRemoteStatus,
+    ConanPackage, PackageAvailability, PackageRemoteStatus, PackageLocalStatus,
     InstallRequest, InstallPackageRequest, UploadLocalRequest
 )
 from dependencies.conan_deps import get_conan_api, find_conanfile
 from conan_utils import is_authenticated
 
 try:
-    from conan.api.model import ListPattern, RecipeReference, PkgReference, Remote
+    from conan.api.model import RecipeReference, PkgReference, Remote
     from conan.api.conan_api import ConanAPI
     from conan.errors import ConanException
     from conan.internal.graph.graph import Node
     from conan.internal.graph.graph import BINARY_BUILD, BINARY_CACHE, BINARY_DOWNLOAD, BINARY_INVALID
-    from conan.internal.graph.graph import RECIPE_DOWNLOADED, RECIPE_INCACHE, RECIPE_UPDATED
+    from conan.internal.graph.graph import RECIPE_DOWNLOADED, RECIPE_INCACHE, RECIPE_UPDATED, RECIPE_CONSUMER
 except ImportError:
     print("ERROR: Conan Python API not found. Make sure Conan 2.x is installed.")
     sys.exit(1)
@@ -23,7 +23,16 @@ except ImportError:
 router = APIRouter(prefix="/packages", tags=["packages"])
 
 
-def create_package_from_node(conan_api: ConanAPI, node: Node, remotes: List[Remote]) -> ConanPackage:
+def create_package_from_node(conan_api: ConanAPI, node: Node, remotes: List[Remote]) -> List[ConanPackage]:
+
+    dependencies: List[ConanPackage] = []
+    for edge in node.edges:
+        dependencies.extend(create_package_from_node(
+            conan_api, edge.dst, remotes))
+
+    # If this node is not a package (e.g. conanfile.txt / cli) return directly the dependencies
+    if node.ref is None:
+        return dependencies
 
     # Extract what Conan tells us
     recipe_status = str(
@@ -31,15 +40,15 @@ def create_package_from_node(conan_api: ConanAPI, node: Node, remotes: List[Remo
     binary_status = str(
         node.binary) if node.binary else "unknown"
 
-    # Determine simple flags for UI
-    local_recipe_available = recipe_status == RECIPE_INCACHE
-    local_binary_available = binary_status == BINARY_CACHE
+    local_recipe_status = "none"
+    if recipe_status == RECIPE_INCACHE:
+        local_recipe_status = "cache"
+    elif recipe_status == RECIPE_CONSUMER:
+        local_recipe_status = "consumer"
 
-    local_status = "none"
-    if local_recipe_available:
-        local_status = "recipe"
-        if local_binary_available:
-            local_status = "recipe+binary"
+    local_binary_status = "none"
+    if binary_status == BINARY_CACHE:
+        local_binary_status = "cache"
 
     is_incompatible = binary_status == BINARY_INVALID
     incompatible_reason = node.conanfile.info.invalid if is_incompatible else None
@@ -53,7 +62,8 @@ def create_package_from_node(conan_api: ConanAPI, node: Node, remotes: List[Remo
             # Enhanced remote checking: if package is in local cache, also check remote availability
             remote_recipe_available = False
             remote_binary_available = False
-            remote_status = "none"
+            remote_recipe_status = "none"
+            remote_binary_status = "none"
 
             # Check if package exists for this recipe reference
             try:
@@ -87,28 +97,27 @@ def create_package_from_node(conan_api: ConanAPI, node: Node, remotes: List[Remo
                 pass  # Binary not found on this remote, try next
 
             if remote_recipe_available:
-                remote_status = "recipe"
-                if remote_binary_available:
-                    remote_status = "recipe+binary"
+                remote_recipe_status = "available"
+            if remote_binary_available:
+                remote_binary_status = "available"
 
             remotes_status.append(PackageRemoteStatus(
                 remote_name=remote.name,
-                status=remote_status
+                recipe_status=remote_recipe_status,
+                binary_status=remote_binary_status
             ))
 
     except Exception as e:
         print(
             f"Error checking remote availability for {node.ref}: {e}")
 
-    dependencies: List[ConanPackage] = []
-    for edge in node.edges:
-        package = create_package_from_node(conan_api, edge.dst, remotes)
-        dependencies.append(package)
-
     availability = PackageAvailability(
         is_incompatible=is_incompatible,
         incompatible_reason=incompatible_reason,
-        local_status=local_status,
+        local_status=PackageLocalStatus(
+            recipe_status=local_recipe_status,
+            binary_status=local_binary_status
+        ),
         remotes_status=remotes_status
     )
 
@@ -121,12 +130,11 @@ def create_package_from_node(conan_api: ConanAPI, node: Node, remotes: List[Remo
         availability=availability
     )
 
-    return package
+    return [package]
 
 
 async def parse_conanfile(conan_api: ConanAPI, file_path: str, host_profile: str, build_profile: str, remote_name: Optional[str] = None) -> List[ConanPackage]:
     """Parse conanfile.py and extract packages with optional remote filtering."""
-    packages: List[ConanPackage] = []
 
     # Load the specified profiles
     profile_host = conan_api.profiles.get_profile(
@@ -162,12 +170,10 @@ async def parse_conanfile(conan_api: ConanAPI, file_path: str, host_profile: str
             print(f"Not authenticated to remote {remote.name}")
             remotes.remove(remote)
 
+    # Create dependency graph
     deps_graph = conan_api.graph.load_graph_consumer(
         file_path, None, None, None, None, profile_host, profile_build, None, remotes=remotes, update=None
     )
-    
-    if deps_graph.error:
-        raise Exception(str(deps_graph.error))
 
     # Analyze binaries to see what's available
     conan_api.graph.analyze_binaries(
@@ -181,11 +187,7 @@ async def parse_conanfile(conan_api: ConanAPI, file_path: str, host_profile: str
         tested_graph=None
     )
 
-    for edge in deps_graph.root.edges:
-        package = create_package_from_node(conan_api, edge.dst, remotes)
-        packages.append(package)
-
-    return packages
+    return create_package_from_node(conan_api, deps_graph.root, remotes)
 
 
 @router.get("", response_model=List[ConanPackage])
@@ -332,6 +334,7 @@ async def install_package(request: InstallPackageRequest):
             "status": "completed"
         }
     except ConanException as e:
+        print(str(e))
         raise HTTPException(
             status_code=500, detail=f"Conan API error: {str(e)}")
     except Exception as e:

@@ -14,11 +14,18 @@ class ConanSettings(BaseModel):
     compiler: Dict[str, dict] = {}
     build_type: List[str | None] = []   # e.g., ["Debug", "Release"]
 
+class PackageLocalStatus(BaseModel):
+    """Package availability status in the cache."""
+
+    recipe_status: str
+    binary_status: str
+
 class PackageRemoteStatus(BaseModel):
     """Package availability status on a specific remote."""
 
     remote_name: str
-    status: str
+    recipe_status: str
+    binary_status: str
 
 class PackageAvailability(BaseModel):
     """Package availability information based on what Conan's analyze_binaries tells us."""
@@ -27,7 +34,9 @@ class PackageAvailability(BaseModel):
     incompatible_reason: Optional[str] = None
 
     # Local availability
-    local_status: str = "none"
+    local_status: PackageLocalStatus = None
+
+    # Remote availability
     remotes_status: List[PackageRemoteStatus] = []
 
 

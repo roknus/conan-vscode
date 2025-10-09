@@ -412,7 +412,7 @@ export async function uploadLocalPackage(conanStore: ConanStore, apiClient: Cona
     }
 
     // Check if package has local binaries
-    if (item.packageInfo.availability.local_status !== 'recipe+binary') {
+    if (item.packageInfo.availability.local_status.binary_status !== 'cache') {
         vscode.window.showWarningMessage('Package does not have local binaries available for upload');
         return;
     }
@@ -467,5 +467,100 @@ export async function uploadLocalPackage(conanStore: ConanStore, apiClient: Cona
         }
     } catch (error) {
         vscode.window.showErrorMessage(`Failed to get remotes: ${error}`);
+    }
+}
+
+export async function createPackage(conanStore: ConanStore, apiClient: ConanApiClient): Promise<void> {
+    if (conanStore.isTaskRunning()) {
+        vscode.window.showWarningMessage('Another operation is in progress. Please wait for it to complete.');
+        return;
+    }
+
+    if (conanStore.getServerState() !== 'running') {
+        vscode.window.showErrorMessage('Conan API Server is not available.');
+        return;
+    }
+
+    if (conanStore.activeHostProfile === null) {
+        vscode.window.showErrorMessage('No active host profile selected. Please select a host profile before creating.');
+        return;
+    }
+
+    if (conanStore.activeBuildProfile === null) {
+        vscode.window.showErrorMessage('No active build profile selected. Please select a build profile before creating.');
+        return;
+    }
+
+    getLogger().info('📦 Creating package...');
+
+    conanStore.setCurrentTask({
+        type: TaskType.CREATE_PACKAGE,
+        description: 'Creating package'
+    });
+
+    try {
+        const result = await apiClient.createPackage(
+            conanStore.workspaceRoot,
+            conanStore.activeHostProfile.path,
+            conanStore.activeBuildProfile.path
+        );
+        
+        getLogger().info(`✅ Package create completed successfully`);
+        vscode.window.showInformationMessage(`Package created successfully with profiles: host=${conanStore.activeHostProfile.name}, build=${conanStore.activeBuildProfile.name}`);
+
+    } catch (error) {
+        getLogger().error(`❌ Package create failed:`, error);
+        vscode.window.showErrorMessage(`Package create failed: ${error}`);
+    } finally {
+        conanStore.setCurrentTask(null);
+    }
+
+    // Refresh packages after create
+    refreshPackages(conanStore, apiClient);
+}
+
+export async function testPackage(conanStore: ConanStore, apiClient: ConanApiClient): Promise<void> {
+    if (conanStore.isTaskRunning()) {
+        vscode.window.showWarningMessage('Another operation is in progress. Please wait for it to complete.');
+        return;
+    }
+
+    if (conanStore.getServerState() !== 'running') {
+        vscode.window.showErrorMessage('Conan API Server is not available.');
+        return;
+    }
+
+    if (conanStore.activeHostProfile === null) {
+        vscode.window.showErrorMessage('No active host profile selected. Please select a host profile before testing.');
+        return;
+    }
+
+    if (conanStore.activeBuildProfile === null) {
+        vscode.window.showErrorMessage('No active build profile selected. Please select a build profile before testing.');
+        return;
+    }
+
+    getLogger().info('🧪 Testing package...');
+
+    conanStore.setCurrentTask({
+        type: TaskType.TEST_PACKAGE,
+        description: 'Testing package'
+    });
+
+    try {
+        const result = await apiClient.testPackage(
+            conanStore.workspaceRoot,
+            conanStore.activeHostProfile.path,
+            conanStore.activeBuildProfile.path
+        );
+        
+        getLogger().info(`✅ Package test completed successfully`);
+        vscode.window.showInformationMessage(`Package tested successfully with profiles: host=${conanStore.activeHostProfile.name}, build=${conanStore.activeBuildProfile.name}`);
+
+    } catch (error) {
+        getLogger().error(`❌ Package test failed:`, error);
+        vscode.window.showErrorMessage(`Package test failed: ${error}`);
+    } finally {
+        conanStore.setCurrentTask(null);
     }
 }

@@ -20,6 +20,5 @@ suite('Conan Extension Test Suite', () => {
         assert.ok(commands.includes('conan.installPackages'));
         assert.ok(commands.includes('conan.createProfile'));
         assert.ok(commands.includes('conan.addRemote'));
-        assert.ok(commands.includes('conan.openWebview'));
     });
 });
