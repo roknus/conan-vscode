@@ -136,6 +136,12 @@
         "title": "Test Package",
         "category": "Conan",
         "icon": "$(beaker)"
+      },
+      {
+        "command": "conan.createConanfile",
+        "title": "Create Conanfile",
+        "category": "Conan",
+        "icon": "$(add)"
       }
     ],
     "viewsContainers": {
@@ -143,8 +149,7 @@
         {
           "id": "conan-explorer",
           "title": "Conan",
-          "icon": "$(package)",
-          "when": "conan.backendReady"
+          "icon": "$(package)"
         }
       ]
     },
@@ -154,22 +159,35 @@
           "id": "conan.packages",
           "icon": "$(package)",
           "name": "Packages",
-          "when": "conan.backendReady"
+          "when": "conan.backendReady && conan.hasConanfile"
         },
         {
           "id": "conan.profiles",
           "icon": "$(person)",
           "name": "Profiles",
-          "when": "conan.backendReady"
+          "when": "conan.backendReady && conan.hasConanfile"
         },
         {
           "id": "conan.remotes",
           "icon": "$(globe)",
           "name": "Remotes",
-          "when": "conan.backendReady"
+          "when": "conan.backendReady && conan.hasConanfile"
+        },
+        {
+          "id": "conan.welcome",
+          "icon": "$(package)",
+          "name": "Conan",
+          "when": "!conan.hasConanfile"
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "conan.welcome",
+        "contents": "Welcome to Conan Package Manager! 🎉\n\nGet started by creating your first conanfile in this workspace.\n\n[Create Conanfile](command:conan.createConanfile)\n\n[Learn More](https://docs.conan.io/2/)",
+        "when": "!conan.hasConanfile"
+      }
+    ],
     "menus": {
       "view/title": [
         {
@@ -306,6 +324,10 @@
         {
           "command": "conan.testPackage",
           "when": "conan.backendReady && conan.producerProject"
+        },
+        {
+          "command": "conan.createConanfile",
+          "when": "!conan.hasConanfile && conan.backendReady"
         }
       ]
     },
