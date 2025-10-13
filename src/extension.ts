@@ -61,6 +61,7 @@ function createConanProject(workspaceRoot: string, serverManager: ConanServerMan
 
             await startBackend(workspaceRoot, serverManager);
 
+            vscode.commands.executeCommand('setContext', 'conan.hasConanfile', conanfileInfo.hasAnyConanfile);
             vscode.commands.executeCommand('setContext', 'conan.producerProject', conanfileInfo.preferredFile?.endsWith('.py'));
 
             conanProject.activate();
@@ -86,6 +87,7 @@ function createConanProject(workspaceRoot: string, serverManager: ConanServerMan
             logger.info(`Conanfile deleted: ${uri.fsPath}`);
             logger.info('⚠️ No conanfiles found!');
 
+            vscode.commands.executeCommand('setContext', 'conan.hasConanfile', false);
             conanProject.deactivate();
             stopBackend(serverManager);
 
@@ -96,6 +98,7 @@ function createConanProject(workspaceRoot: string, serverManager: ConanServerMan
     (async () => {
         // Start extension if conanfile already exists
         const conanfileInfo = detectConanfiles(workspaceRoot);
+        vscode.commands.executeCommand('setContext', 'conan.hasConanfile', conanfileInfo.hasAnyConanfile);
         vscode.commands.executeCommand('setContext', 'conan.producerProject', conanfileInfo.preferredFile?.endsWith('.py'));
         if (conanfileInfo.hasAnyConanfile) {
             await startBackend(workspaceRoot, serverManager);

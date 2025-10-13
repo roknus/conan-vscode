@@ -28,6 +28,7 @@ import { ConanRemoteItem } from './tree_data_providers/conan_remote_item';
 import { removeRemote } from './commands/remotes/remove_remote';
 import { selectRemote } from './commands/remotes/select_remote';
 import { loginRemote } from './commands/remotes/login_remote';
+import { createConanfile } from './commands/project/create_conanfile';
 /**
  * Register extension commands
  */
@@ -122,6 +123,12 @@ function registerCommands(conanStore: ConanStore, apiClient: ConanApiClient): vs
         vscode.commands.registerCommand('conan.testPackage', () => {
             if (conanStore && apiClient) {
                 testPackage(conanStore, apiClient);
+            }
+        }),
+
+        vscode.commands.registerCommand('conan.createConanfile', () => {
+            if (conanStore && apiClient) {
+                createConanfile(conanStore, apiClient);
             }
         }),
     );
@@ -306,7 +313,6 @@ export class ConanProject implements vscode.Disposable {
 
         // Load saved configuration into store
         this.conanStore.initializeFromConfig();
-
 
         refreshProfiles(this.conanStore, this.api);
         refreshRemotes(this.conanStore, this.api);

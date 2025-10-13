@@ -48,7 +48,8 @@ const copyFilesPlugin = {
 				'backend/routes/packages.py',
 				'backend/routes/profiles.py',
 				'backend/routes/remotes.py',
-				'backend/routes/config.py'
+				'backend/routes/config.py',
+				'backend/routes/new.py',
 			];
 			
 			filesToCopy.forEach(file => {

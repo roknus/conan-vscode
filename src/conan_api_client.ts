@@ -179,4 +179,12 @@ export class ConanApiClient {
             options: options
         });
     }
+
+    async createConanfile(workspacePath: string, template: string, name?: string): Promise<any> {
+            return this.makeRequest('/new', 'POST', {
+                workspace_path: workspacePath,
+                template: template,
+                name: name
+        });
+    }
 }
