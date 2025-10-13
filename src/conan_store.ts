@@ -45,6 +45,7 @@ export interface PackageInfo {
     version: string;
     ref: string;
     id: string;
+    type: string;
     availability: PackageAvailability;
     dependencies?: PackageInfo[];
 }
@@ -75,9 +76,9 @@ export type AllRemotes = 'all';
 
 function isValidRemote(value: any): value is Remote {
     return value !== null &&
-           typeof value === 'object' &&
-           typeof value.name === 'string' &&
-           typeof value.url === 'string';
+        typeof value === 'object' &&
+        typeof value.name === 'string' &&
+        typeof value.url === 'string';
 }
 
 function isValidActiveRemote(value: any): value is Remote | AllRemotes {

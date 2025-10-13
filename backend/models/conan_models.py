@@ -1,8 +1,6 @@
 from typing import List, Optional, Dict
 from pydantic import BaseModel
 
-
-
 class ConanSettings(BaseModel):
     """Conan settings structure."""
     path: str                           # Path to settings file in home folder
@@ -45,6 +43,7 @@ class ConanPackage(BaseModel):
     version: str
     ref: str
     id: str
+    type: str  # "consumer" or "dependency"
     availability: PackageAvailability
     # Add support for nested dependencies
     dependencies: List['ConanPackage'] = []
