@@ -32,11 +32,6 @@ function getPackageRemoteStatus(remotesStatus: PackageRemoteStatus[], activeRemo
 
 function getPackageLocalStatus(status: PackageLocalStatus): string {
     let highestStatus = 'none';
-
-    if(status.recipe_status === 'consumer') {
-        return 'producer'
-    }
-
     if (status.recipe_status === 'cache' && status.binary_status === 'cache') {
         return 'recipe+binary'; // Highest availability found
     } else if (status.recipe_status === 'cache' && highestStatus !== 'recipe+binary') {
@@ -226,7 +221,7 @@ export class ConanPackageProvider implements vscode.TreeDataProvider<ConanPackag
         const localStatus = getPackageLocalStatus(availability.local_status);
         const remoteStatus = getPackageRemoteStatus(availability.remotes_status, this.conanStore.activeRemote);
 
-        if(localStatus === 'producer') {
+        if(pkg.type === 'consumer') {
             return 'package-producer';
         } else if (availability.is_incompatible) {
             return 'package-incompatible';

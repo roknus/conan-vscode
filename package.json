@@ -239,17 +239,17 @@
         },
         {
           "command": "conan.uploadLocalPackage",
-          "when": "view == conan.packages && viewItem == package-uploadable",
+          "when": "view == conan.packages && (viewItem == package-uploadable || viewItem == package-producer-uploadable)",
           "group": "inline"
         },
         {
           "command": "conan.createPackage",
-          "when": "view == conan.packages && viewItem == package-producer",
+          "when": "view == conan.packages && viewItem =~ /^package-producer/",
           "group": "inline"
         },
         {
           "command": "conan.testPackage",
-          "when": "view == conan.packages && viewItem == package-producer",
+          "when": "view == conan.packages && viewItem =~ /^package-producer/",
           "group": "inline"
         },
         {

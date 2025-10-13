@@ -12,6 +12,8 @@ from conan_utils import is_authenticated
 try:
     from conan.api.model import RecipeReference, PkgReference, Remote
     from conan.api.conan_api import ConanAPI
+    from conan.api.model import ListPattern
+    from conan.internal.model.profile import Profile
     from conan.errors import ConanException
     from conan.internal.graph.graph import Node
     from conan.internal.graph.graph import BINARY_BUILD, BINARY_CACHE, BINARY_DOWNLOAD, BINARY_INVALID
@@ -23,12 +25,70 @@ except ImportError:
 router = APIRouter(prefix="/packages", tags=["packages"])
 
 
-def create_package_from_node(conan_api: ConanAPI, node: Node, remotes: List[Remote]) -> List[ConanPackage]:
+def is_recipe_available(conan_api: ConanAPI, ref: RecipeReference, remote: Optional[Remote] = None) -> bool:
+    """Check if a recipe is available in any of the specified remotes.
+
+    Args:
+        conan_api (ConanAPI): The Conan API instance.
+        ref (RecipeReference): The recipe reference.
+        remote (Optional[Remote]): The remote to check. If None, checks local cache.
+
+    Returns:
+        bool: True if the recipe is available, False otherwise.
+    """
+    try:
+        # Create a new recipe that won't have any revision
+        recipe_ref: RecipeReference = RecipeReference(
+            ref.name,
+            ref.version,
+            ref.user,
+            ref.channel
+        )
+        recipe_revisions = conan_api.list.recipe_revisions(recipe_ref, remote)
+        if recipe_revisions:
+            return True
+    except Exception as e:
+        print(
+            f"Error checking remote availability for recipe {ref} on {remote.name}: {e}")
+    return False
+
+
+def is_package_available(conan_api: ConanAPI, ref: RecipeReference, package_id: str, remote: Optional[Remote] = None) -> bool:
+    """Check if a package is available in any of the specified remotes.
+
+    Args:
+        conan_api (ConanAPI): The Conan API instance.
+        ref (RecipeReference): The recipe reference.
+        package_id (str): The package ID.
+        remote (Optional[Remote]): The remote to check. If None, checks local cache.
+
+    Returns:
+        bool: True if the package is available, False otherwise.
+    """
+    # Check if binary exists for this package ID
+    try:
+        recipe_ref = ref
+        if not recipe_ref.revision:
+            recipe_ref = conan_api.list.latest_recipe_revision(
+                recipe_ref, remote)
+        package_ref: PkgReference = PkgReference(
+            recipe_ref, package_id)
+        package_revisions = conan_api.list.package_revisions(
+            package_ref, remote)
+        if package_revisions:
+            return True
+    except Exception as e:
+        print(
+            f"Error checking remote availability for package {package_id}: {e}")
+    return False
+
+
+def create_package_from_node(conan_api: ConanAPI, node: Node, remotes: List[Remote], profile_host: Profile) -> List[ConanPackage]:
 
     dependencies: List[ConanPackage] = []
     for edge in node.edges:
         dependencies.extend(create_package_from_node(
-            conan_api, edge.dst, remotes))
+            conan_api, edge.dst, remotes, profile_host=profile_host))
 
     # If this node is not a package (e.g. conanfile.txt / cli) return directly the dependencies
     if node.ref is None:
@@ -40,61 +100,33 @@ def create_package_from_node(conan_api: ConanAPI, node: Node, remotes: List[Remo
     binary_status = str(
         node.binary) if node.binary else "unknown"
 
-    local_recipe_status = "none"
-    if recipe_status == RECIPE_INCACHE:
-        local_recipe_status = "cache"
-    elif recipe_status == RECIPE_CONSUMER:
-        local_recipe_status = "consumer"
-
-    local_binary_status = "none"
-    if binary_status == BINARY_CACHE:
-        local_binary_status = "cache"
-
+    type: str = "consumer" if recipe_status == RECIPE_CONSUMER else "dependency"
     is_incompatible = binary_status == BINARY_INVALID
     incompatible_reason = node.conanfile.info.invalid if is_incompatible else None
 
     remotes_status: List[PackageRemoteStatus] = []
 
     try:
+        local_recipe_status = "none"
+        local_binary_status = "none"
+        if is_recipe_available(conan_api, node.ref):
+            local_recipe_status = "cache"
+        if is_package_available(
+                conan_api, node.ref, node.package_id):
+            local_binary_status = "cache"
+
         # Check each configured remote
         for remote in remotes:
 
             # Enhanced remote checking: if package is in local cache, also check remote availability
-            remote_recipe_available = False
-            remote_binary_available = False
             remote_recipe_status = "none"
             remote_binary_status = "none"
 
-            # Check if package exists for this recipe reference
-            try:
-                recipe_ref: RecipeReference = RecipeReference(
-                    node.ref.name,
-                    node.ref.version,
-                    node.ref.user,
-                    node.ref.channel
-                )
+            remote_recipe_available = is_recipe_available(
+                conan_api, node.ref, remote)
 
-                recipe_revisions = conan_api.list.recipe_revisions(
-                    recipe_ref, remote)
-                if recipe_revisions:
-                    remote_recipe_available = True
-            except Exception as e:
-                print(
-                    f"Error checking remote availability for recipe {recipe_ref}: {e}")
-                pass  # Binary not found on this remote, try next
-
-            # Check if binary exists for this package ID
-            try:
-                package_ref: PkgReference = PkgReference(
-                    node.ref, node.package_id)
-                package_revisions = conan_api.list.package_revisions(
-                    package_ref, remote)
-                if package_revisions:
-                    remote_binary_available = True
-            except Exception as e:
-                print(
-                    f"Error checking remote availability for package {package_ref}: {e}")
-                pass  # Binary not found on this remote, try next
+            remote_binary_available = is_package_available(
+                conan_api, node.ref, node.package_id, remote)
 
             if remote_recipe_available:
                 remote_recipe_status = "available"
@@ -126,6 +158,7 @@ def create_package_from_node(conan_api: ConanAPI, node: Node, remotes: List[Remo
         version=str(node.ref.version),
         ref=str(node.ref),
         id=node.package_id,
+        type=type,
         dependencies=dependencies,
         availability=availability
     )
@@ -187,7 +220,7 @@ async def parse_conanfile(conan_api: ConanAPI, file_path: str, host_profile: str
         tested_graph=None
     )
 
-    return create_package_from_node(conan_api, deps_graph.root, remotes)
+    return create_package_from_node(conan_api, deps_graph.root, remotes, profile_host=profile_host)
 
 
 @router.get("", response_model=List[ConanPackage])
@@ -357,7 +390,6 @@ async def upload_local_package(request: UploadLocalRequest):
 
         # Check if package exists locally first
         try:
-            from conan.api.model import ListPattern
             ref_pattern = ListPattern(
                 request.package_ref, package_id=request.package_id)
 
