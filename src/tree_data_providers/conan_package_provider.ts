@@ -221,8 +221,12 @@ export class ConanPackageProvider implements vscode.TreeDataProvider<ConanPackag
         const localStatus = getPackageLocalStatus(availability.local_status);
         const remoteStatus = getPackageRemoteStatus(availability.remotes_status, this.conanStore.activeRemote);
 
-        if(pkg.type === 'consumer') {
-            return 'package-producer';
+        if (pkg.type === 'consumer') {
+            if (availability.local_status.binary_status === 'cache') {
+                return 'package-producer-uploadable'
+            } else {
+                return 'package-producer';
+            }
         } else if (availability.is_incompatible) {
             return 'package-incompatible';
         } else if (localStatus === 'recipe+binary' && remoteStatus === 'recipe+binary') {

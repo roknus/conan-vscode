@@ -404,7 +404,7 @@ async def upload_local_package(request: UploadLocalRequest):
             package_list = conan_api.list.select(
                 ref_pattern, profile=profile_host)
 
-            if not package_list.recipes:
+            if not package_list:
                 raise HTTPException(
                     status_code=404, detail=f"Package {request.package_ref} not found in local cache")
 
