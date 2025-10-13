@@ -12,7 +12,8 @@ export type PackageItemType =
     | 'package-unknown'
     | 'package-installing'
     | 'package-uploading'
-    | 'package-producer';
+    | 'package-producer'
+    | 'package-producer-uploadable';
 
 
 export type PackageLocalRecipeStatus = 'none' | 'cache' | 'consumer';
