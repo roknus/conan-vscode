@@ -15,6 +15,8 @@ try:
     from conan.api.model import ListPattern
     from conan.internal.model.profile import Profile
     from conan.errors import ConanException
+    from conan.internal.graph.graph_builder import DepsGraphBuilder
+    from conan.internal.model.options import Options
     from conan.internal.graph.graph import Node
     from conan.internal.graph.graph import BINARY_BUILD, BINARY_CACHE, BINARY_DOWNLOAD, BINARY_INVALID
     from conan.internal.graph.graph import RECIPE_DOWNLOADED, RECIPE_INCACHE, RECIPE_UPDATED, RECIPE_CONSUMER
@@ -155,9 +157,9 @@ def create_package_from_node(conan_api: ConanAPI, node: Node, remotes: List[Remo
 
     package = ConanPackage(
         name=node.ref.name,
-        version=str(node.ref.version),
+        version=str(node.ref.version) if node.ref.version else "none",
         ref=str(node.ref),
-        id=node.package_id,
+        id=node.package_id if node.package_id else "none",
         type=type,
         dependencies=dependencies,
         availability=availability
@@ -203,24 +205,46 @@ async def parse_conanfile(conan_api: ConanAPI, file_path: str, host_profile: str
             print(f"Not authenticated to remote {remote.name}")
             remotes.remove(remote)
 
-    # Create dependency graph
-    deps_graph = conan_api.graph.load_graph_consumer(
-        file_path, None, None, None, None, profile_host, profile_build, None, remotes=remotes, update=None
-    )
+    # Load the root consumer conanfile to get the root node
+    # We don't use load_graph_consumer because we don't want to fail if the dependency graph fails
+    # We will load each requirement separately below
+    root_node = conan_api.graph._load_root_consumer_conanfile(file_path, profile_host, profile_build,
+                                                              name=None, version=None, user=None,
+                                                              channel=None, lockfile=None,
+                                                              remotes=remotes, update=None,
+                                                              is_build_require=False)
 
-    # Analyze binaries to see what's available
-    conan_api.graph.analyze_binaries(
-        deps_graph,
-        # Don't build anything, just analyze what exists
-        build_mode=['never'],
-        remotes=remotes,
-        update=None,
-        lockfile=None,
-        build_modes_test=None,
-        tested_graph=None
-    )
+    # Load the requires
+    DepsGraphBuilder._prepare_node(
+        root_node, profile_host, profile_build, Options(), True)
 
-    return create_package_from_node(conan_api, deps_graph.root, remotes, profile_host=profile_host)
+    requires_packages = []
+    for requires in root_node.conanfile.requires.values():
+        deps_graph = conan_api.graph.load_graph_requires(requires=[requires.ref], tool_requires=None, profile_host=profile_host,
+                                                         profile_build=profile_build, lockfile=None, remotes=remotes, update=None)
+
+        if not deps_graph.error:
+            # Analyze binaries to see what's available
+            conan_api.graph.analyze_binaries(
+                deps_graph,
+                # Don't build anything, just analyze what exists
+                build_mode=['never'],
+                remotes=remotes,
+                update=None,
+                lockfile=None,
+                build_modes_test=None,
+                tested_graph=None
+            )
+
+        requires_packages.extend(create_package_from_node(conan_api, deps_graph.root, remotes, profile_host=profile_host))
+
+    consumer_package = create_package_from_node(conan_api, root_node, remotes, profile_host=profile_host)
+
+    if not consumer_package:
+        return requires_packages
+    
+    consumer_package[0].dependencies = requires_packages
+    return consumer_package
 
 
 @router.get("", response_model=List[ConanPackage])
