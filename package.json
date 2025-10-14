@@ -36,8 +36,8 @@
   "contributes": {
     "commands": [
       {
-        "command": "conan.installPackages",
-        "title": "Install Packages",
+        "command": "conan.installRequirements",
+        "title": "Install requirements",
         "category": "Conan",
         "icon": "$(cloud-download)"
       },
@@ -156,9 +156,9 @@
     "views": {
       "conan-explorer": [
         {
-          "id": "conan.packages",
+          "id": "conan.recipe",
           "icon": "$(package)",
-          "name": "Packages",
+          "name": "Recipe",
           "when": "conan.backendReady && conan.hasConanfile"
         },
         {
@@ -192,22 +192,22 @@
       "view/title": [
         {
           "command": "conan.refreshPackages",
-          "when": "view == conan.packages",
+          "when": "view == conan.recipe",
           "group": "navigation"
         },
         {
-          "command": "conan.installPackages",
-          "when": "view == conan.packages && conan.packages.hasPackages",
+          "command": "conan.installRequirements",
+          "when": "view == conan.recipe && conan.recipe.hasPackages",
           "group": "navigation"
         },
         {
           "command": "conan.createPackage",
-          "when": "view == conan.packages && conan.producerProject",
+          "when": "view == conan.recipe && conan.producerProject",
           "group": "navigation"
         },
         {
           "command": "conan.testPackage",
-          "when": "view == conan.packages && conan.producerProject",
+          "when": "view == conan.recipe && conan.producerProject",
           "group": "navigation"
         },
         {
@@ -234,22 +234,22 @@
       "view/item/context": [
         {
           "command": "conan.installPackage",
-          "when": "view == conan.packages && (viewItem == package-downloadable || viewItem == package-buildable)",
+          "when": "view == conan.recipe && (viewItem == package-downloadable || viewItem == package-buildable)",
           "group": "inline"
         },
         {
           "command": "conan.uploadLocalPackage",
-          "when": "view == conan.packages && (viewItem == package-uploadable || viewItem == package-producer-uploadable)",
+          "when": "view == conan.recipe && (viewItem == package-uploadable || viewItem == package-producer-uploadable)",
           "group": "inline"
         },
         {
           "command": "conan.createPackage",
-          "when": "view == conan.packages && viewItem =~ /^package-producer/",
+          "when": "view == conan.recipe && viewItem =~ /^package-producer/",
           "group": "inline"
         },
         {
           "command": "conan.testPackage",
-          "when": "view == conan.packages && viewItem =~ /^package-producer/",
+          "when": "view == conan.recipe && viewItem =~ /^package-producer/",
           "group": "inline"
         },
         {
@@ -270,7 +270,7 @@
       ],
       "commandPalette": [
         {
-          "command": "conan.installPackages",
+          "command": "conan.installRequirements",
           "when": "conan.backendReady"
         },
         {

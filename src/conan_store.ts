@@ -41,14 +41,23 @@ export interface PackageAvailability {
     remotes_status: PackageRemoteStatus[];
 }
 
+export interface RecipeInfo {
+    name: string;
+    version: string;
+    ref: string;
+    id: string;
+    type: string; // 'producer' | 'consumer'
+    error: string | null;
+    dependencies: PackageInfo[];
+}
+
 export interface PackageInfo {
     name: string;
     version: string;
     ref: string;
     id: string;
-    type: string;
     availability: PackageAvailability;
-    dependencies?: PackageInfo[];
+    dependencies: PackageInfo[];
 }
 
 export type ProfileType = 'host' | 'build';
@@ -103,12 +112,12 @@ export interface RunningTask {
 
 // Action types for the store reducer
 interface StoreAction {
-    type: 'SET_PACKAGES' | 'SET_SERVER_STATE' | 'SET_PROFILE' | 'SET_REMOTE' | 'SET_WORKSPACE_ROOT' | 'SET_PROFILES' | 'SET_REMOTES' | 'SET_CURRENT_TASK';
+    type: 'SET_RECIPE' | 'SET_SERVER_STATE' | 'SET_PROFILE' | 'SET_REMOTE' | 'SET_WORKSPACE_ROOT' | 'SET_PROFILES' | 'SET_REMOTES' | 'SET_CURRENT_TASK';
     payload?: any;
 }
 
 interface State {
-    packages: PackageInfo[] | undefined;
+    recipe: RecipeInfo | undefined;
     profiles: Profile[] | undefined;
     remotes: Remote[] | undefined;
     serverState: ServerState;
@@ -120,8 +129,8 @@ interface State {
 }
 
 // Individual reducers for each piece of state
-function packagesReducer(state: PackageInfo[] | undefined, action: StoreAction): PackageInfo[] | undefined {
-    if (action.type === 'SET_PACKAGES') {
+function recipeReducer(state: RecipeInfo | undefined, action: StoreAction): RecipeInfo | undefined {
+    if (action.type === 'SET_RECIPE') {
         return action.payload;
     }
     return state;
@@ -185,7 +194,7 @@ function currentTaskReducer(state: RunningTask | null, action: StoreAction): Run
 
 function rootReducer(state: State, action: StoreAction): State {
     return {
-        packages: packagesReducer(state.packages, action),
+        recipe: recipeReducer(state.recipe, action),
         profiles: profilesReducer(state.profiles, action),
         remotes: remotesReducer(state.remotes, action),
         serverState: serverStateReducer(state.serverState, action),
@@ -201,7 +210,7 @@ function rootReducer(state: State, action: StoreAction): State {
 export class ConanStore implements vscode.Disposable {
 
     private state: State = {
-        packages: undefined,
+        recipe: undefined,
         profiles: undefined,
         remotes: undefined,
         serverState: 'stopped',
@@ -242,7 +251,7 @@ export class ConanStore implements vscode.Disposable {
     setServerState(state: ServerState): void {
         if (this.state.serverState !== state) {
             this.dispatch({ type: 'SET_SERVER_STATE', payload: state });
-            this.dispatch({ type: 'SET_PACKAGES', payload: undefined });
+            this.dispatch({ type: 'SET_RECIPE', payload: undefined });
         }
     }
 
@@ -253,7 +262,7 @@ export class ConanStore implements vscode.Disposable {
 
     set activeHostProfile(profile: Profile | null) {
         this.dispatch({ type: 'SET_PROFILE', payload: { profileType: 'host', profile } });
-        this.dispatch({ type: 'SET_PACKAGES', payload: undefined });
+        this.dispatch({ type: 'SET_RECIPE', payload: undefined });
     }
 
     get activeBuildProfile(): Profile | null {
@@ -262,7 +271,7 @@ export class ConanStore implements vscode.Disposable {
 
     set activeBuildProfile(profile: Profile | null) {
         this.dispatch({ type: 'SET_PROFILE', payload: { profileType: 'build', profile } });
-        this.dispatch({ type: 'SET_PACKAGES', payload: undefined });
+        this.dispatch({ type: 'SET_RECIPE', payload: undefined });
     }
 
     // Remote management
@@ -272,7 +281,7 @@ export class ConanStore implements vscode.Disposable {
 
     set activeRemote(remote: Remote | AllRemotes) {
         this.dispatch({ type: 'SET_REMOTE', payload: remote });
-        this.dispatch({ type: 'SET_PACKAGES', payload: undefined });
+        this.dispatch({ type: 'SET_RECIPE', payload: undefined });
     }
 
     // Workspace root management
@@ -282,7 +291,7 @@ export class ConanStore implements vscode.Disposable {
 
     set workspaceRoot(root: string) {
         this.dispatch({ type: 'SET_WORKSPACE_ROOT', payload: root });
-        this.dispatch({ type: 'SET_PACKAGES', payload: undefined });
+        this.dispatch({ type: 'SET_RECIPE', payload: undefined });
     }
 
     // Initialize from saved configuration
@@ -313,37 +322,37 @@ export class ConanStore implements vscode.Disposable {
         await config.update('activeRemote', this.state.activeRemote, vscode.ConfigurationTarget.Workspace);
     }
 
-    // Get packages (cached)
-    getPackages(): PackageInfo[] | undefined {
-        return this.state.packages;
+    // Get recipe (cached)
+    getRecipeInfo(): RecipeInfo | undefined {
+        return this.state.recipe;
     }
 
-    // Set packages through reducer
-    setPackages(packages: PackageInfo[]): void {
-        this.dispatch({ type: 'SET_PACKAGES', payload: packages });
-        this.logger.debug(`Updated package cache: ${packages.length} packages`);
+    // Set recipe through reducer
+    setRecipe(recipe: RecipeInfo): void {
+        this.dispatch({ type: 'SET_RECIPE', payload: recipe });
+        this.logger.debug(`Updated recipe cache: ${recipe.name} ${recipe.version}`);
     }
 
-    // Clear package cache
-    clearPackageCache(): void {
-        this.dispatch({ type: 'SET_PACKAGES', payload: undefined });
+    // Clear recipe cache
+    clearRecipeCache(): void {
+        this.dispatch({ type: 'SET_RECIPE', payload: undefined });
     }
 
     // Get package by reference
     getPackageByRef(packageRef: string): PackageInfo | undefined {
-        return this.state.packages?.find(pkg => pkg.ref === packageRef);
+        return this.state.recipe?.dependencies.find(pkg => pkg.ref === packageRef);
     }
 
     // Check if cache is valid
     isCacheValid(): boolean {
-        return this.state.packages !== null && this.state.serverState === 'running';
+        return this.state.recipe !== null && this.state.serverState === 'running';
     }
 
     // Get cache statistics
-    getCacheStats(): { packageCount: number; isValid: boolean; lastRefresh: string } {
+    getCacheStats(): { recipeCount: number; isValid: boolean; lastRefresh: string } {
         return {
-            packageCount: this.state.packages?.length || 0,
-            isValid: this.state.packages !== null,
+            recipeCount: this.state.recipe?.dependencies.length || 0,
+            isValid: this.state.recipe !== null,
             lastRefresh: `Workspace: ${this.state.workspaceRoot}, Remote: ${this.state.activeRemote}, Host: ${this.state.activeHostProfile}, Build: ${this.state.activeBuildProfile}`
         };
     }

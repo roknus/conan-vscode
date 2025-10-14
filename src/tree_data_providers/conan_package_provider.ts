@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { ConanStore, PackageInfo, PackageItemType, PackageLocalStatus, PackageRemoteStatus, Remote, TaskType } from '../conan_store';
+import { ConanStore, RecipeInfo, PackageInfo, PackageItemType, PackageLocalStatus, PackageRemoteStatus, Remote, TaskType } from '../conan_store';
 import { ConanPackageItem, } from './conan_package_item';
 import { getLogger } from '../logger';
 
@@ -53,8 +53,8 @@ export class ConanPackageProvider implements vscode.TreeDataProvider<ConanPackag
                 this._onDidChangeTreeData.fire();
             }),
 
-            // Register for packages state changes
-            this.conanStore.subscribe(state => state.packages, () => {
+            // Register for recipe state changes
+            this.conanStore.subscribe(state => state.recipe, () => {
                 this._onDidChangeTreeData.fire();
             })
         );
@@ -88,7 +88,7 @@ export class ConanPackageProvider implements vscode.TreeDataProvider<ConanPackag
     }
 
     private setHasPackages(hasPackages: boolean) {
-        vscode.commands.executeCommand('setContext', 'conan.packages.hasPackages', hasPackages);
+        vscode.commands.executeCommand('setContext', 'conan.recipe.hasPackages', hasPackages);
     }
 
     private async getConanPackages(): Promise<(ConanPackageItem | vscode.TreeItem)[]> {
@@ -108,8 +108,8 @@ export class ConanPackageProvider implements vscode.TreeDataProvider<ConanPackag
 
             case 'running':
                 try {
-                    const packages = this.conanStore.getPackages();
-                    if (!packages) {
+                    const recipeInfo = this.conanStore.getRecipeInfo();
+                    if (!recipeInfo) {
                         this.setHasPackages(false);
 
                         if (this.conanStore.activeBuildProfile === null || this.conanStore.activeHostProfile === null) {
@@ -130,7 +130,7 @@ export class ConanPackageProvider implements vscode.TreeDataProvider<ConanPackag
                     }
 
                     this.setHasPackages(true);
-                    return packages.map(pkg => this.createConanPackageItem(pkg));
+                    return recipeInfo.dependencies.map(dep => this.createConanPackageItem(dep));
                 } catch (error) {
                     this.logger.warn('Package API request failed:', error);
 
@@ -221,13 +221,7 @@ export class ConanPackageProvider implements vscode.TreeDataProvider<ConanPackag
         const localStatus = getPackageLocalStatus(availability.local_status);
         const remoteStatus = getPackageRemoteStatus(availability.remotes_status, this.conanStore.activeRemote);
 
-        if (pkg.type === 'consumer') {
-            if (availability.local_status.binary_status === 'cache') {
-                return 'package-producer-uploadable'
-            } else {
-                return 'package-producer';
-            }
-        } else if (availability.is_incompatible) {
+        if (availability.is_incompatible) {
             return 'package-incompatible';
         } else if (localStatus === 'recipe+binary' && remoteStatus === 'recipe+binary') {
             return 'package-available'; // Package available both remotely and locally

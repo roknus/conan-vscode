@@ -8,7 +8,7 @@ import { ConanRemoteProvider } from './tree_data_providers/conan_remote_provider
 import { ConanPackageItem } from './tree_data_providers/conan_package_item';
 
 import {
-    installAllPackages,
+    installRequirements,
     installSinglePackage,
     createProfile,
     uploadLocalPackage,
@@ -36,9 +36,9 @@ function registerCommands(conanStore: ConanStore, apiClient: ConanApiClient): vs
 
     // Register commands
     return vscode.Disposable.from(
-        vscode.commands.registerCommand('conan.installPackages', () => {
+        vscode.commands.registerCommand('conan.installRequirements', () => {
             if (conanStore && apiClient) {
-                installAllPackages(conanStore, apiClient);
+                installRequirements(conanStore, apiClient);
             }
         }),
 
@@ -190,14 +190,28 @@ export class ConanProject implements vscode.Disposable {
         const profileProvider = new ConanProfileProvider(this.conanStore);
         const remoteProvider = new ConanRemoteProvider(this.conanStore);
 
+        const recipeTreeView = vscode.window.createTreeView('conan.recipe', {
+            treeDataProvider: packageProvider,
+        });
+
         this.disposables.push(
+            recipeTreeView,
             packageProvider,
             profileProvider,
             remoteProvider,
             // Register tree data providers
-            vscode.window.registerTreeDataProvider('conan.packages', packageProvider),
             vscode.window.registerTreeDataProvider('conan.profiles', profileProvider),
             vscode.window.registerTreeDataProvider('conan.remotes', remoteProvider),
+
+
+            // Register for recipe state changes
+            this.conanStore.subscribe(state => state.recipe, (recipe) => {
+                if (recipe?.type === 'producer') {
+                    recipeTreeView.title = `Recipe (${recipe.name})`;
+                } else {
+                    recipeTreeView.title = 'Recipe';
+                }
+            })
         );
     }
 
