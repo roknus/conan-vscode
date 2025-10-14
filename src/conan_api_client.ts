@@ -1,10 +1,15 @@
 import * as http from 'http';
 import { ConanServerManager } from './conan_server_manager';
-import { PackageInfo, Profile, Remote } from './conan_store';
+import { PackageInfo, Profile, RecipeInfo, Remote } from './conan_store';
 
 interface AddRemoteResponse {
     success: boolean;
     requires_auth: boolean;
+}
+
+interface InstallResponse {
+    message: string;
+    status: string;
 }
 
 // HTTP client for server communication
@@ -71,7 +76,7 @@ export class ConanApiClient {
         return this.makeRequest('/config/home');
     }
 
-    async getPackages(workspacePath: string, hostProfile: string, buildProfile: string, remoteName?: string): Promise<PackageInfo[]> {
+    async getRecipeInfo(workspacePath: string, hostProfile: string, buildProfile: string, remoteName?: string): Promise<RecipeInfo> {
         let url = `/packages?workspace_path=${encodeURIComponent(workspacePath)}&host_profile=${encodeURIComponent(hostProfile)}&build_profile=${encodeURIComponent(buildProfile)}`;
 
         if (remoteName) {
@@ -81,7 +86,7 @@ export class ConanApiClient {
         return this.makeRequest(url);
     }
 
-    async installPackages(workspacePath: string, buildMissing: boolean = true, hostProfile: string, buildProfile: string): Promise<any> {
+    async installRequirements(workspacePath: string, buildMissing: boolean = true, hostProfile: string, buildProfile: string): Promise<InstallResponse> {
         return this.makeRequest('/packages/install', 'POST', {
             workspace_path: workspacePath,
             build_missing: buildMissing,

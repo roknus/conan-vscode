@@ -17,7 +17,7 @@ suite('Conan Extension Test Suite', () => {
         // Test that commands are properly registered
         const commands = await vscode.commands.getCommands();
         
-        assert.ok(commands.includes('conan.installPackages'));
+        assert.ok(commands.includes('conan.installRequirements'));
         assert.ok(commands.includes('conan.createProfile'));
         assert.ok(commands.includes('conan.addRemote'));
     });

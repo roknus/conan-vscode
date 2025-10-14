@@ -38,12 +38,22 @@ class PackageAvailability(BaseModel):
     remotes_status: List[PackageRemoteStatus] = []
 
 
+class ConanRecipe(BaseModel):
+    name: str
+    version: str
+    ref: str
+    id: str
+    type: str  # "producer" or "consumer"
+    error: Optional[str] = None
+    # Add support for nested dependencies
+    dependencies: List['ConanPackage'] = []
+
+
 class ConanPackage(BaseModel):
     name: str
     version: str
     ref: str
     id: str
-    type: str  # "consumer" or "dependency"
     availability: PackageAvailability
     # Add support for nested dependencies
     dependencies: List['ConanPackage'] = []
@@ -86,6 +96,9 @@ class InstallRequest(BaseModel):
     host_profile: str
     build_profile: str
 
+class InstallResponse(BaseModel):
+    message: str
+    status: str
 
 class InstallPackageRequest(BaseModel):
     workspace_path: str
