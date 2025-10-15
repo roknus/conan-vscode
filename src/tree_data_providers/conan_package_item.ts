@@ -17,6 +17,13 @@ export class ConanPackageItem extends vscode.TreeItem {
         public readonly collapsibleState: vscode.TreeItemCollapsibleState,
         public readonly itemType: PackageItemType
     ) {
+
+        // Expand the node if its a producer to display dependencies
+        const isProducer = itemType.startsWith('package-producer');
+        if(isProducer && collapsibleState === vscode.TreeItemCollapsibleState.Collapsed) {
+            collapsibleState = vscode.TreeItemCollapsibleState.Expanded;
+        }
+
         super(get_ref(packageInfo), collapsibleState);
 
         // Create detailed tooltip for packages with availability information

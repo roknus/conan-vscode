@@ -18,6 +18,7 @@ try:
     from conan.internal.graph.graph_builder import DepsGraphBuilder
     from conan.internal.model.options import Options
     from conan.internal.graph.graph import Node
+    from conan.internal.graph.graph_error import GraphMissingError
     from conan.internal.graph.graph import BINARY_BUILD, BINARY_CACHE, BINARY_DOWNLOAD, BINARY_INVALID
     from conan.internal.graph.graph import RECIPE_DOWNLOADED, RECIPE_INCACHE, RECIPE_UPDATED, RECIPE_CONSUMER
 except ImportError:
@@ -218,10 +219,45 @@ async def parse_conanfile(conan_api: ConanAPI, file_path: str, host_profile: str
     DepsGraphBuilder._prepare_node(
         root_node, profile_host, profile_build, Options(), True)
 
+    # Create dependency graph
+    root_deps_graph = conan_api.graph.load_graph_consumer(
+        file_path,  name=None, version=None, user=None,
+        channel=None, profile_host=profile_host, profile_build=profile_build, lockfile=None, remotes=remotes, update=None
+    )
+    try:
+        root_deps_graph2 = conan_api.graph.load_graph_requires(requires=[root_node.conanfile.ref], tool_requires=None, profile_host=profile_host,
+                                                               profile_build=profile_build, lockfile=None, remotes=remotes, update=None)
+    except Exception as e:
+        print(f"Error loading full dependency graph: {e}")
+
     requires_packages = []
     for requires in root_node.conanfile.requires.values():
         deps_graph = conan_api.graph.load_graph_requires(requires=[requires.ref], tool_requires=None, profile_host=profile_host,
                                                          profile_build=profile_build, lockfile=None, remotes=remotes, update=None)
+
+        if isinstance(deps_graph.error, GraphMissingError):
+
+            availability = PackageAvailability(
+                is_incompatible=False,
+                incompatible_reason=None,
+                local_status=PackageLocalStatus(
+                    recipe_status='none',
+                    binary_status='none'
+                ),
+                remotes_status=[]
+            )
+
+            missing_package = ConanPackage(
+                name=requires.ref.name,
+                version=str(
+                    requires.ref.version) if requires.ref.version else "none",
+                ref=str(requires.ref),
+                id="none",
+                type="dependency",
+                dependencies=[],
+                availability=availability
+            )
+            requires_packages.append(missing_package)
 
         if not deps_graph.error:
             # Analyze binaries to see what's available
@@ -236,13 +272,15 @@ async def parse_conanfile(conan_api: ConanAPI, file_path: str, host_profile: str
                 tested_graph=None
             )
 
-        requires_packages.extend(create_package_from_node(conan_api, deps_graph.root, remotes, profile_host=profile_host))
+            requires_packages.extend(create_package_from_node(
+                conan_api, deps_graph.root, remotes, profile_host=profile_host))
 
-    consumer_package = create_package_from_node(conan_api, root_node, remotes, profile_host=profile_host)
+    consumer_package = create_package_from_node(
+        conan_api, root_node, remotes, profile_host=profile_host)
 
     if not consumer_package:
         return requires_packages
-    
+
     consumer_package[0].dependencies = requires_packages
     return consumer_package
 
