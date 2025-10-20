@@ -9,7 +9,7 @@ import { ConanPackageItem } from './tree_data_providers/conan_package_item';
 
 import {
     installRequirements,
-    installSinglePackage,
+    installRequirement,
     createProfile,
     uploadLocalPackage,
     refreshPackages,
@@ -43,8 +43,8 @@ function registerCommands(conanStore: ConanStore, apiClient: ConanApiClient): vs
         }),
 
         vscode.commands.registerCommand('conan.installPackage', (item?: ConanPackageItem) => {
-            if (conanStore && apiClient) {
-                installSinglePackage(conanStore, apiClient, item);
+            if (conanStore && apiClient && item) {
+                installRequirement(conanStore, apiClient, item);
             }
         }),
 
@@ -155,18 +155,9 @@ export class ConanProject implements vscode.Disposable {
         this.disposables.push(this.conanStore);
         this.api = new ConanApiClient(this.serverManager);
 
-
         this.disposables.push(
             this.serverManager.onStateChange((newState) => {
                 this.conanStore.setServerState(newState);
-            }),
-
-            this.conanStore.subscribe(state => state.activeHostProfile, () => {
-                refreshPackages(this.conanStore, this.api);
-            }),
-
-            this.conanStore.subscribe(state => state.activeBuildProfile, () => {
-                refreshPackages(this.conanStore, this.api);
             })
         );
 
@@ -184,7 +175,6 @@ export class ConanProject implements vscode.Disposable {
     }
 
     private initializeProviders() {
-
         // Initialize tree data providers with server support
         const packageProvider = new ConanPackageProvider(this.conanStore);
         const profileProvider = new ConanProfileProvider(this.conanStore);
@@ -216,14 +206,13 @@ export class ConanProject implements vscode.Disposable {
     }
 
     private initializeStatusBars() {
-
         // Initialize Host Profile status bar item
         this.disposables.push(this.hostProfileStatusBar,
 
             this.hostProfileStatusBar.onProfileFileChange((event) => {
                 if (event.type === 'changed') {
                     this.logger.info(`${event.profileType} profile file changed, refreshing packages`);
-                    refreshPackages(this.conanStore, this.api);
+                    vscode.commands.executeCommand('conan.refreshPackages');
                 } else if (event.type === 'deleted') {
                     this.conanStore.activeHostProfile = null;
                     this.conanStore.saveConfiguration();
@@ -231,7 +220,7 @@ export class ConanProject implements vscode.Disposable {
                 }
             }),
 
-            this.conanStore.subscribe(state => state.activeHostProfile, (profile) => {
+            this.conanStore.subscribe(state => state.activeProfiles.host, (profile) => {
                 this.hostProfileStatusBar.setProfile(profile);
             })
         );
@@ -242,7 +231,7 @@ export class ConanProject implements vscode.Disposable {
             this.buildProfileStatusBar.onProfileFileChange((event) => {
                 if (event.type === 'changed') {
                     this.logger.info(`${event.profileType} profile file changed, refreshing packages`);
-                    refreshPackages(this.conanStore, this.api);
+                    vscode.commands.executeCommand('conan.refreshPackages');
                 } else if (event.type === 'deleted') {
                     this.conanStore.activeBuildProfile = null;
                     this.conanStore.saveConfiguration();
@@ -250,7 +239,7 @@ export class ConanProject implements vscode.Disposable {
                 }
             }),
 
-            this.conanStore.subscribe(state => state.activeBuildProfile, (profile) => {
+            this.conanStore.subscribe(state => state.activeProfiles.build, (profile) => {
                 this.buildProfileStatusBar.setProfile(profile);
             })
         );
@@ -265,14 +254,12 @@ export class ConanProject implements vscode.Disposable {
     }
 
     private initializeProfileFolderWatchers() {
-
-
         // Initialize profile folder watcher service after server is connected
         this.disposables.push(this.globalProfileFolderWatcherService,
 
             // Register callback for profile folder changes
             this.globalProfileFolderWatcherService.onProfileFolderChange((event: ProfileFolderChangeEvent) => {
-                refreshProfiles(this.conanStore, this.api);
+                vscode.commands.executeCommand('conan.refreshProfiles');
             })
         );
 
@@ -280,7 +267,7 @@ export class ConanProject implements vscode.Disposable {
 
             // Register callback for profile folder changes
             this.localProfileFolderWatcherService.onProfileFolderChange((event: ProfileFolderChangeEvent) => {
-                refreshProfiles(this.conanStore, this.api);
+                vscode.commands.executeCommand('conan.refreshProfiles');
             }),
 
             // Also watch for configuration changes that might affect conanfile preference
@@ -302,7 +289,7 @@ export class ConanProject implements vscode.Disposable {
 
                         this.localProfileFolderWatcherService.activate(absoluteLocalProfilesPath);
                         // Refresh profiles to pick up any new profiles in the new location
-                        refreshProfiles(this.conanStore, this.api);
+                        vscode.commands.executeCommand('conan.refreshProfiles');
                     }
                 }
             })
@@ -311,7 +298,6 @@ export class ConanProject implements vscode.Disposable {
     }
 
     public async activate() {
-
         const globalProfilesPath = await this.api.getConanHome();
         this.globalProfileFolderWatcherService.activate(`${globalProfilesPath}/profiles`);
 
@@ -324,27 +310,31 @@ export class ConanProject implements vscode.Disposable {
         // Initialize with both paths
         this.localProfileFolderWatcherService.activate(absoluteLocalProfilesPath);
 
-
         // Load saved configuration into store
         this.conanStore.initializeFromConfig();
 
-        refreshProfiles(this.conanStore, this.api);
-        refreshRemotes(this.conanStore, this.api);
-        refreshPackages(this.conanStore, this.api);
+        // Only register profile change listeners after initial load to avoid redundant refreshes
+        // TODO: This will be called for every active, need to cleanup previous subscriptions during deactivate
+        this.disposables.push(
+            this.conanStore.subscribe(state => state.activeProfiles.host, () => {
+                vscode.commands.executeCommand('conan.refreshPackages');
+            }),
 
+            this.conanStore.subscribe(state => state.activeProfiles.build, () => {
+                vscode.commands.executeCommand('conan.refreshPackages');
+            })
+        );
+
+        vscode.commands.executeCommand('conan.refreshProfiles');
+        vscode.commands.executeCommand('conan.refreshRemotes');
+        vscode.commands.executeCommand('conan.refreshPackages');
 
         this.hostProfileStatusBar.activate();
         this.buildProfileStatusBar.activate();
         this.remoteStatusBar.activate();
     }
 
-    public reload() {
-        // Refresh packages since conanfile content or preference may have changed
-        refreshPackages(this.conanStore, this.api);
-    }
-
     public deactivate() {
-
         this.hostProfileStatusBar.deactivate();
         this.buildProfileStatusBar.deactivate();
         this.remoteStatusBar.deactivate();

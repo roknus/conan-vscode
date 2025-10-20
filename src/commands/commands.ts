@@ -93,59 +93,73 @@ export async function selectProfile(conanStore: ConanStore, profileType: Profile
 }
 
 export async function refreshPackages(conanStore: ConanStore, apiClient: ConanApiClient): Promise<void> {
+    await vscode.window.withProgress({
+        location: { viewId: 'conan.recipe' },
+        title: "Loading packages..."
+    }, async () => {
+        try {
+            conanStore.clearRecipeCache();
 
-    conanStore.clearRecipeCache();
+            if (conanStore.activeHostProfile === null) {
+                vscode.window.showErrorMessage('No active host profile selected. Please select a host profile before refreshing packages.');
+                return;
+            }
 
-    if (conanStore.activeHostProfile === null) {
-        vscode.window.showErrorMessage('No active host profile selected. Please select a host profile before refreshing packages.');
-        return;
-    }
+            if (conanStore.activeBuildProfile === null) {
+                vscode.window.showErrorMessage('No active build profile selected. Please select a build profile before refreshing packages.');
+                return;
+            }
 
-    if (conanStore.activeBuildProfile === null) {
-        vscode.window.showErrorMessage('No active build profile selected. Please select a build profile before refreshing packages.');
-        return;
-    }
-
-    try {
-        const recipe = await apiClient.getRecipeInfo(
-            conanStore.workspaceRoot,
-            conanStore.activeHostProfile.path,
-            conanStore.activeBuildProfile.path,
-            conanStore.activeRemote === 'all' ? undefined : conanStore.activeRemote.name);
-        conanStore.setRecipe(recipe);
-    } catch (error) {
-        vscode.window.showErrorMessage(`Failed to refresh packages: ${error}`);
-    }
+            const recipe = await apiClient.getRecipeInfo(
+                conanStore.workspaceRoot,
+                conanStore.activeHostProfile.path,
+                conanStore.activeBuildProfile.path,
+                conanStore.activeRemote === 'all' ? undefined : conanStore.activeRemote.name);
+            conanStore.setRecipe(recipe);
+        } catch (error) {
+            vscode.window.showErrorMessage(`Failed to refresh packages: ${error}`);
+        }
+    });
 }
 
 export async function refreshProfiles(conanStore: ConanStore, apiClient: ConanApiClient): Promise<void> {
-    try {
-        conanStore.clearProfileCache();
+    await vscode.window.withProgress({
+        location: { viewId: 'conan.profiles' },
+        title: "Loading profiles..."
+    }, async () => {
+        try {
+            conanStore.clearProfileCache();
 
-        // Get local profiles path from configuration
-        const config = vscode.workspace.getConfiguration('conan');
-        const localProfilesPath = config.get<string>('localProfilesPath', '.conan2/profiles');
+            // Get local profiles path from configuration
+            const config = vscode.workspace.getConfiguration('conan');
+            const localProfilesPath = config.get<string>('localProfilesPath', '.conan2/profiles');
 
-        // Make path absolute relative to workspace root
-        const workspaceRoot = conanStore.workspaceRoot;
-        const absoluteLocalProfilesPath = localProfilesPath.startsWith('.') ?
-            `${workspaceRoot}/${localProfilesPath}` : localProfilesPath;
+            // Make path absolute relative to workspace root
+            const workspaceRoot = conanStore.workspaceRoot;
+            const absoluteLocalProfilesPath = localProfilesPath.startsWith('.') ?
+                `${workspaceRoot}/${localProfilesPath}` : localProfilesPath;
 
-        const profiles = await apiClient.getProfiles(absoluteLocalProfilesPath);
-        conanStore.setProfiles(profiles);
-    } catch (error) {
-        vscode.window.showErrorMessage(`Failed to refresh profiles: ${error}`);
-    }
+            const profiles = await apiClient.getProfiles(absoluteLocalProfilesPath);
+            conanStore.setProfiles(profiles);
+        } catch (error) {
+            vscode.window.showErrorMessage(`Failed to refresh profiles: ${error}`);
+        }
+    });
 }
 
 export async function refreshRemotes(conanStore: ConanStore, apiClient: ConanApiClient): Promise<void> {
-    try {
-        conanStore.clearRemoteCache();
-        const remotes = await apiClient.getRemotes();
-        conanStore.setRemotes(remotes);
-    } catch (error) {
-        vscode.window.showErrorMessage(`Failed to refresh remotes: ${error}`);
-    }
+    await vscode.window.withProgress({
+        location: { viewId: 'conan.remotes' },
+        title: "Loading remotes..."
+    }, async () => {
+        try {
+            conanStore.clearRemoteCache();
+            const remotes = await apiClient.getRemotes();
+            conanStore.setRemotes(remotes);
+        } catch (error) {
+            vscode.window.showErrorMessage(`Failed to refresh remotes: ${error}`);
+        }
+    });
 }
 
 export async function installRequirements(conanStore: ConanStore, apiClient: ConanApiClient): Promise<void> {
@@ -158,11 +172,13 @@ export async function installRequirements(conanStore: ConanStore, apiClient: Con
         vscode.window.showErrorMessage('No active host profile selected. Please select a host profile before installing packages.');
         return;
     }
+    const activeHostProfile = conanStore.activeHostProfile;
 
     if (conanStore.activeBuildProfile === null) {
         vscode.window.showErrorMessage('No active build profile selected. Please select a build profile before installing packages.');
         return;
     }
+    const activeBuildProfile = conanStore.activeBuildProfile;
 
     getLogger().info('🔧 Installing all requirements...');
     if (conanStore.getServerState() !== 'running') {
@@ -176,34 +192,38 @@ export async function installRequirements(conanStore: ConanStore, apiClient: Con
     });
 
     try {
-        const response = await apiClient.installRequirements(
-            conanStore.workspaceRoot,
-            true,
-            conanStore.activeHostProfile.path,
-            conanStore.activeBuildProfile.path
-        );
+        const response = await vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: "Installing all requirements...",
+            cancellable: false
+        }, async () => {
+            return await apiClient.installRequirements(
+                conanStore.workspaceRoot,
+                true,
+                activeHostProfile.path,
+                activeBuildProfile.path
+            );
+        });
+
         if (response.status === 'error') {
             getLogger().error(`❌ Recipe installation failed:`, response.message);
             vscode.window.showErrorMessage(`Recipe installation failed: ${response.message}`);
         } else {
-            getLogger().info(`✅ Recipe installation finished successfully with profiles: host=${conanStore.activeHostProfile.name}, build=${conanStore.activeBuildProfile.name}`);
-            vscode.window.showInformationMessage(`Recipe installation finished successfully with profiles: host=${conanStore.activeHostProfile.name}, build=${conanStore.activeBuildProfile.name}`);
+            getLogger().info(`✅ Recipe installation finished successfully with profiles: host=${activeHostProfile.name}, build=${activeBuildProfile.name}`);
+            vscode.window.showInformationMessage(`Recipe installation finished successfully with profiles: host=${activeHostProfile.name}, build=${activeBuildProfile.name}`);
         }
+
+        // Clear package status after installation
+        vscode.commands.executeCommand('conan.refreshPackages');
+    } catch (error) {
+        getLogger().error(`❌ Installation failed:`, error);
+        vscode.window.showErrorMessage(`Installation failed: ${error}`);
     } finally {
         conanStore.setCurrentTask(null);
     }
-
-    // Clear package status after installation
-    refreshPackages(conanStore, apiClient);
 }
 
-export async function installSinglePackage(conanStore: ConanStore, apiClient: ConanApiClient, item?: ConanPackageItem): Promise<void> {
-    if (!item || !item.packageInfo) {
-        getLogger().warn('⚠️ No package selected for installation');
-        vscode.window.showErrorMessage('No package selected for installation');
-        return;
-    }
-
+export async function installRequirement(conanStore: ConanStore, apiClient: ConanApiClient, item: ConanPackageItem): Promise<void> {
     if (conanStore.isTaskRunning()) {
         vscode.window.showWarningMessage('Another operation is in progress. Please wait for it to complete.');
         return;
@@ -218,11 +238,13 @@ export async function installSinglePackage(conanStore: ConanStore, apiClient: Co
         vscode.window.showErrorMessage('No active host profile selected. Please select a host profile before installing packages.');
         return;
     }
+    const activeHostProfile = conanStore.activeHostProfile;
 
     if (conanStore.activeBuildProfile === null) {
         vscode.window.showErrorMessage('No active build profile selected. Please select a build profile before installing packages.');
         return;
     }
+    const activeBuildProfile = conanStore.activeBuildProfile;
 
     const packageRef = item.packageInfo.ref;
     getLogger().info(`📦 Installing package: ${packageRef}`);
@@ -247,24 +269,37 @@ export async function installSinglePackage(conanStore: ConanStore, apiClient: Co
     });
 
     try {
-        await apiClient.installPackage(
-            conanStore.workspaceRoot,
-            packageRef,
-            options.value.buildMissing,
-            conanStore.activeHostProfile.path,
-            conanStore.activeBuildProfile.path,
-            options.value.force
-        );
-        vscode.window.showInformationMessage(`Installation of ${packageRef} started via API server with profiles: host=${conanStore.activeHostProfile}, build=${conanStore.activeBuildProfile}`);
+        const response = await vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: `Installing "${packageRef}" requirement...`,
+            cancellable: false
+        }, async () => {
+            return await apiClient.installRequirement(
+                conanStore.workspaceRoot,
+                packageRef,
+                options.value.buildMissing,
+                activeHostProfile.path,
+                activeBuildProfile.path,
+                options.value.force
+            );
+        });
+
+        if (response.status === 'error') {
+            getLogger().error(`❌ Requirement installation failed:`, response.message);
+            vscode.window.showErrorMessage(`Requirement installation failed: ${response.message}`);
+        } else {
+            getLogger().info(`✅ Requirement installation finished successfully with profiles: host=${activeHostProfile.name}, build=${activeBuildProfile.name}`);
+            vscode.window.showInformationMessage(`Requirement installation finished successfully with profiles: host=${activeHostProfile.name}, build=${activeBuildProfile.name}`);
+        }
+
+        // Clear package status after installation
+        vscode.commands.executeCommand('conan.refreshPackages');
 
     } catch (error) {
-        vscode.window.showErrorMessage(`Package installation failed: ${error}`);
+        vscode.window.showErrorMessage(`Requirement installation failed: ${error}`);
     } finally {
         conanStore.setCurrentTask(null);
     }
-
-    // Clear package status after installation
-    refreshPackages(conanStore, apiClient);
 }
 
 export async function createProfile(conanStore: ConanStore, apiClient: ConanApiClient): Promise<void> {
@@ -393,7 +428,7 @@ export async function createProfile(conanStore: ConanStore, apiClient: ConanApiC
     }
 
     // Clear profile status after creation
-    refreshProfiles(conanStore, apiClient);
+    vscode.commands.executeCommand('conan.refreshProfiles');
 }
 
 export async function uploadLocalPackage(conanStore: ConanStore, apiClient: ConanApiClient, item?: ConanPackageItem): Promise<void> {
@@ -464,7 +499,7 @@ export async function uploadLocalPackage(conanStore: ConanStore, apiClient: Cona
             }
 
             // Clear package status after upload
-            refreshPackages(conanStore, apiClient);
+            vscode.commands.executeCommand('conan.refreshPackages');
         }
     } catch (error) {
         vscode.window.showErrorMessage(`Failed to get remotes: ${error}`);
@@ -517,7 +552,7 @@ export async function createPackage(conanStore: ConanStore, apiClient: ConanApiC
     }
 
     // Refresh packages after create
-    refreshPackages(conanStore, apiClient);
+    vscode.commands.executeCommand('conan.refreshPackages');
 }
 
 export async function testPackage(conanStore: ConanStore, apiClient: ConanApiClient): Promise<void> {

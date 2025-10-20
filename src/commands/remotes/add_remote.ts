@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import { ConanApiClient } from "../../conan_api_client";
 import { ConanStore } from "../../conan_store";
-import { refreshRemotes } from "../commands";
 import { loginRemote } from './login_remote';
 
 
@@ -27,7 +26,7 @@ export async function addRemote(conanStore: ConanStore, apiClient: ConanApiClien
                 const response = await apiClient.addRemote(remoteName, remoteUrl);
                 vscode.window.showInformationMessage(`Remote '${remoteName}' added successfully`);
 
-                if(response.requires_auth) {
+                if (response.requires_auth) {
                     await loginRemote(remoteName, apiClient);
                 }
 
@@ -40,5 +39,5 @@ export async function addRemote(conanStore: ConanStore, apiClient: ConanApiClien
     }
 
     // Clear remotes status after addition
-    refreshRemotes(conanStore, apiClient);
+    vscode.commands.executeCommand('conan.refreshRemotes');
 }

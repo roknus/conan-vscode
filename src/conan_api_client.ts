@@ -95,7 +95,7 @@ export class ConanApiClient {
         });
     }
 
-    async installPackage(workspacePath: string, packageRef: string, buildMissing: boolean = true, hostProfile: string, buildProfile: string, force: boolean = false): Promise<any> {
+    async installRequirement(workspacePath: string, packageRef: string, buildMissing: boolean = true, hostProfile: string, buildProfile: string, force: boolean = false): Promise<InstallResponse> {
         return this.makeRequest('/packages/install/package', 'POST', {
             workspace_path: workspacePath,
             package_ref: packageRef,
