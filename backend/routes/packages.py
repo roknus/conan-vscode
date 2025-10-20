@@ -390,7 +390,7 @@ async def install_packages(request: InstallRequest) -> InstallResponse:
 
 
 @router.post("/install/package")
-async def install_package(request: InstallPackageRequest):
+async def install_package(request: InstallPackageRequest) -> InstallResponse:
     """Install a specific package by reference."""
     conan_api = get_conan_api()
     if conan_api is None:
@@ -439,9 +439,7 @@ async def install_package(request: InstallPackageRequest):
             "status": "completed"
         }
     except ConanException as e:
-        print(str(e))
-        raise HTTPException(
-            status_code=500, detail=f"Conan API error: {str(e)}")
+        return InstallResponse(message=f"{str(e)}", status="error")
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error during package installation: {str(e)}")

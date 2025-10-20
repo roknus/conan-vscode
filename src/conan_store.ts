@@ -112,7 +112,7 @@ export interface RunningTask {
 
 // Action types for the store reducer
 interface StoreAction {
-    type: 'SET_RECIPE' | 'SET_SERVER_STATE' | 'SET_PROFILE' | 'SET_REMOTE' | 'SET_WORKSPACE_ROOT' | 'SET_PROFILES' | 'SET_REMOTES' | 'SET_CURRENT_TASK';
+    type: 'SET_RECIPE' | 'SET_SERVER_STATE' | 'SET_ACTIVE_HOST_PROFILES' | 'SET_ACTIVE_BUILD_PROFILES' | 'SET_ACTIVE_PROFILES' | 'SET_REMOTE' | 'SET_WORKSPACE_ROOT' | 'SET_PROFILES' | 'SET_REMOTES' | 'SET_CURRENT_TASK';
     payload?: any;
 }
 
@@ -121,8 +121,7 @@ interface State {
     profiles: Profile[] | undefined;
     remotes: Remote[] | undefined;
     serverState: ServerState;
-    activeHostProfile: Profile | null;
-    activeBuildProfile: Profile | null;
+    activeProfiles: { host: Profile | null; build: Profile | null };
     activeRemote: Remote | AllRemotes;
     workspaceRoot: string;
     currentTask: RunningTask | null;
@@ -157,16 +156,15 @@ function serverStateReducer(state: ServerState, action: StoreAction): ServerStat
     return state;
 }
 
-function activeHostProfileReducer(state: Profile | null, action: StoreAction): Profile | null {
-    if (action.type === 'SET_PROFILE' && action.payload.profileType === 'host') {
-        return action.payload.profile;
+function activeProfilesReducer(state: { host: Profile | null; build: Profile | null }, action: StoreAction): { host: Profile | null; build: Profile | null } {
+    if (action.type === 'SET_ACTIVE_PROFILES') {
+        return action.payload;
     }
-    return state;
-}
-
-function activeBuildProfileReducer(state: Profile | null, action: StoreAction): Profile | null {
-    if (action.type === 'SET_PROFILE' && action.payload.profileType === 'build') {
-        return action.payload.profile;
+    else if (action.type === 'SET_ACTIVE_HOST_PROFILES') {
+        return { ...state, host: action.payload };
+    }
+    if (action.type === 'SET_ACTIVE_BUILD_PROFILES') {
+        return { ...state, build: action.payload };
     }
     return state;
 }
@@ -198,8 +196,7 @@ function rootReducer(state: State, action: StoreAction): State {
         profiles: profilesReducer(state.profiles, action),
         remotes: remotesReducer(state.remotes, action),
         serverState: serverStateReducer(state.serverState, action),
-        activeHostProfile: activeHostProfileReducer(state.activeHostProfile, action),
-        activeBuildProfile: activeBuildProfileReducer(state.activeBuildProfile, action),
+        activeProfiles: activeProfilesReducer(state.activeProfiles, action),
         activeRemote: activeRemoteReducer(state.activeRemote, action),
         workspaceRoot: workspaceRootReducer(state.workspaceRoot, action),
         currentTask: currentTaskReducer(state.currentTask, action),
@@ -214,8 +211,7 @@ export class ConanStore implements vscode.Disposable {
         profiles: undefined,
         remotes: undefined,
         serverState: 'stopped',
-        activeHostProfile: null,
-        activeBuildProfile: null,
+        activeProfiles: { host: null, build: null },
         activeRemote: 'all',
         workspaceRoot: '',
         currentTask: null
@@ -257,20 +253,20 @@ export class ConanStore implements vscode.Disposable {
 
     // Profile management
     get activeHostProfile(): Profile | null {
-        return this.state.activeHostProfile;
+        return this.state.activeProfiles.host;
     }
 
     set activeHostProfile(profile: Profile | null) {
-        this.dispatch({ type: 'SET_PROFILE', payload: { profileType: 'host', profile } });
+        this.dispatch({ type: 'SET_ACTIVE_HOST_PROFILES', payload: profile });
         this.dispatch({ type: 'SET_RECIPE', payload: undefined });
     }
 
     get activeBuildProfile(): Profile | null {
-        return this.state.activeBuildProfile;
+        return this.state.activeProfiles.build;
     }
 
     set activeBuildProfile(profile: Profile | null) {
-        this.dispatch({ type: 'SET_PROFILE', payload: { profileType: 'build', profile } });
+        this.dispatch({ type: 'SET_ACTIVE_BUILD_PROFILES', payload: profile });
         this.dispatch({ type: 'SET_RECIPE', payload: undefined });
     }
 
@@ -299,14 +295,18 @@ export class ConanStore implements vscode.Disposable {
         const config = vscode.workspace.getConfiguration('conan');
 
         const savedHostProfile = config.get<Profile | null>('activeHostProfile');
+        let hostProfile = null;
         if (savedHostProfile !== undefined && savedHostProfile !== null && isValidProfile(savedHostProfile)) {
-            this.dispatch({ type: 'SET_PROFILE', payload: { profileType: 'host', profile: savedHostProfile } });
+            hostProfile = savedHostProfile;
         }
 
         const savedBuildProfile = config.get<Profile | null>('activeBuildProfile');
+        let buildProfile = null;
         if (savedBuildProfile !== undefined && savedBuildProfile !== null && isValidProfile(savedBuildProfile)) {
-            this.dispatch({ type: 'SET_PROFILE', payload: { profileType: 'build', profile: savedBuildProfile } });
+            buildProfile = savedBuildProfile;
         }
+
+        this.dispatch({ type: 'SET_ACTIVE_PROFILES', payload: { host: hostProfile, build: buildProfile } });
 
         const savedRemote = config.get<Remote | AllRemotes>('activeRemote');
         if (savedRemote !== undefined && savedRemote !== null && isValidActiveRemote(savedRemote)) {
@@ -317,8 +317,8 @@ export class ConanStore implements vscode.Disposable {
     // Save current configuration
     async saveConfiguration(): Promise<void> {
         const config = vscode.workspace.getConfiguration('conan');
-        await config.update('activeHostProfile', this.state.activeHostProfile, vscode.ConfigurationTarget.Workspace);
-        await config.update('activeBuildProfile', this.state.activeBuildProfile, vscode.ConfigurationTarget.Workspace);
+        await config.update('activeHostProfile', this.state.activeProfiles.host, vscode.ConfigurationTarget.Workspace);
+        await config.update('activeBuildProfile', this.state.activeProfiles.build, vscode.ConfigurationTarget.Workspace);
         await config.update('activeRemote', this.state.activeRemote, vscode.ConfigurationTarget.Workspace);
     }
 
@@ -353,7 +353,7 @@ export class ConanStore implements vscode.Disposable {
         return {
             recipeCount: this.state.recipe?.dependencies.length || 0,
             isValid: this.state.recipe !== null,
-            lastRefresh: `Workspace: ${this.state.workspaceRoot}, Remote: ${this.state.activeRemote}, Host: ${this.state.activeHostProfile}, Build: ${this.state.activeBuildProfile}`
+            lastRefresh: `Workspace: ${this.state.workspaceRoot}, Remote: ${this.state.activeRemote}, Host: ${this.state.activeProfiles.host}, Build: ${this.state.activeProfiles.build}`
         };
     }
 

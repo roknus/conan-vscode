@@ -79,7 +79,8 @@ function createConanProject(workspaceRoot: string, serverManager: ConanServerMan
 
                 vscode.window.showInformationMessage(`Now using ${conanfileInfo.preferredFile} for Conan operations.`);
 
-                conanProject.reload();
+                // Refresh packages since conanfile content or preference may have changed
+                vscode.commands.executeCommand('conan.refreshPackages');
             }
         }),
 
